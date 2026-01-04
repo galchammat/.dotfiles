@@ -1,0 +1,23 @@
+# ~/.shellrc
+# Shared shell settings (bash + zsh). Keep this POSIXy.
+
+# PATH: prefer user bin first
+export PATH="$HOME/.local/bin:$PATH"
+export PATH="/opt/nvim-linux-x86_64/bin:$PATH"
+
+# NVM (works in bash + zsh)
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+# dotfiles bare-repo helper
+alias dot='git --git-dir="$HOME/.dotfiles" --work-tree="$HOME"'
+
+# WSL Discord IPC bridge for Neovim (your exact behavior, cleaned slightly)
+nvim() {
+  if ! pidof socat >/dev/null 2>&1; then
+    [ -e /tmp/discord-ipc-0 ] && rm -f /tmp/discord-ipc-0
+    socat UNIX-LISTEN:/tmp/discord-ipc-0,fork \
+      EXEC:"/usr/local/bin/npiperelay.exe //./pipe/discord-ipc-0" 2>/dev/null &
+  fi
+  command nvim "$@"
+}
