@@ -11,3 +11,9 @@ export NVM_DIR="$HOME/.nvm"
 
 # dotfiles bare-repo helper
 alias dot='git --git-dir="$HOME/.dotfiles.git" --work-tree="$HOME"'
+
+# copy command output to clipboard. command | xc
+alias xc='xclip -selection clipboard'
+
+# pinentry + terminal match
+export GPG_TTY=$(tty)
