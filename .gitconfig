@@ -1,0 +1,8 @@
+[user]
+	email = alchammatg@gmail.com
+	name = Ghazi Alchammat
+	signingkey = 6BB78665C21D3849DBC6C7C223642B2461BCEDB3
+[gpg]
+	format = openpgp
+[commit]
+	gpgsign = true
