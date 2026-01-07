@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Usage:
+#   dev            -> uses current directory
+#   dev .          -> uses current directory
+#   dev path/to/dir -> uses that directory
+
+DIR="${1:-.}"
+DIR="$(realpath -m "$DIR")"
+
+if [[ ! -d "$DIR" ]]; then
+  echo "dev: not a directory: $DIR" >&2
+  exit 2
+fi
+
+# Session name derived from directory name (safe chars only)
+NAME="$(basename "$DIR")"
+NAME="${NAME//[^A-Za-z0-9_-]/_}"
+SESSION="dev-${NAME}"
+
+# If session exists, just switch/attach to it
+if tmux has-session -t "$SESSION" 2>/dev/null; then
+  if [[ -n "${TMUX:-}" ]]; then
+    exec tmux switch-client -t "$SESSION"
+  else
+    exec tmux attach -t "$SESSION"
+  fi
+fi
+
+# Create session with windows starting in DIR
+tmux new-session -d -s "$SESSION" -n nvim -c "$DIR" "nvim"
+tmux new-window  -t "$SESSION:2" -n shell -c "$DIR"
+
+# Focus nvim window by default
+tmux select-window -t "$SESSION:1"
+
+# Enter it (switch if already inside tmux to avoid nesting)
+if [[ -n "${TMUX:-}" ]]; then
+  exec tmux switch-client -t "$SESSION"
+else
+  exec tmux attach -t "$SESSION"
+fi
+
