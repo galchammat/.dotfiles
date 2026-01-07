@@ -1,7 +1,7 @@
 # If not interactive, return
 [[ -o interactive ]] || return
 
-# Load shared config (your additions live here)
+# Load shared config
 [[ -f "$HOME/.shellrc" ]] && source "$HOME/.shellrc"
 
 # History (reasonable defaults)
@@ -19,3 +19,6 @@ compinit
 
 # Prompt (simple, readable)
 PROMPT='%n@%m:%~$ '
+
+# Add nvim to path
+export PATH="$PATH:/opt/nvim-linux-x86_64/bin"
