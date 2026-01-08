@@ -1,6 +1,3 @@
-mkdir -p ~/.local/bin
-
-cat > ~/.local/bin/swapos <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -38,7 +35,3 @@ sudo bootctl set-oneshot "${win_id}"
 
 echo "swapos: rebooting now..."
 systemctl reboot
-EOF
-
-chmod +x ~/.local/bin/swapos
-

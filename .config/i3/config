@@ -196,9 +196,8 @@ for_window [class="Alacritty"] border none
 
 # --- Alacritty pseudo-fullscreen
 for_window [class="Alacritty"] floating enable
-for_window [class="Alacritty"] floating enable, resize set 2460 px 1340 px, move position center, move down 4 px
-#for_window [class="Alacritty"] resize set 95 ppt 95 ppt
-#for_window [class="Alacritty"] move position center
+for_window [class="Alacritty"] floating enable, resize set 2490 px 1370 px, move position center, move down 3 px
+exec --no-startup-id sh -c 'while ! xrandr | grep -q " connected"; do sleep 0.2; done; alacritty'
 
 # Wallpaper
 exec_always --no-startup-id feh --bg-fill ~/Pictures/wallpapers/default.jpg
@@ -207,8 +206,11 @@ exec_always --no-startup-id picom --daemon --log-level warn --log-file ~/.cache/
 # Startup workspaces
 exec --no-startup-id i3-msg 'workspace 1; exec firefox'
 exec --no-startup-id i3-msg 'workspace 2; exec alacritty'
-exec --no-startup-id i3-msg 'workspace 0; exec discord'
+exec --no-startup-id i3-msg 'workspace 10; exec discord'
 
 # Toggle i3 status bar
 bindsym --release $mod+b bar mode toggle
+
+# Screenshot (Flameshot)
+bindsym Print exec --no-startup-id flameshot gui
 
