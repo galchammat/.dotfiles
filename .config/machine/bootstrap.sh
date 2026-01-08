@@ -37,6 +37,7 @@ log "Starting machine bootstrap from: $MACHINE_DIR"
 
 run_step "apt.sh"
 run_step "uefi.sh"
+run_step "fonts.sh"
 
 # Optional per-machine local hook (ignored by git)
 if [[ -f "$MACHINE_DIR/local.sh" ]]; then
