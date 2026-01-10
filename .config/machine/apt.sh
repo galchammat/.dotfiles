@@ -10,5 +10,5 @@ fi
 
 sudo apt update
 # Read packages ignoring blank lines and comments
-grep -vE '^\s*(#|$)' "$PKG_FILE" | xargs -r sudo apt install -y
+xargs -a "$PACKAGES_FILE" sudo apt install -y
 
