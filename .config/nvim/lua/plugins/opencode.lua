@@ -17,7 +17,7 @@ return {
 
     -- Recommended/example keymaps.
     vim.keymap.set({ 'n' }, '<leader>oa', function()
-      require('opencode').ask('@this: ', { submit = true })
+      require('opencode').ask('@this: ')
     end, { desc = 'Ask opencode' })
     vim.keymap.set({ 'n' }, '<leader>ox', function()
       require('opencode').select()

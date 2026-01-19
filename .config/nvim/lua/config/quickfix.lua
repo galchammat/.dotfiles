@@ -11,7 +11,7 @@ vim.api.nvim_create_autocmd('QuickFixCmdPost', {
     local filtered = vim.tbl_filter(function(item)
       local text = item.text or ''
       -- Keep only lines with ERROR: or WARN: in them
-      return text:match('ERROR:') or text:match('WARN:')
+      return text:match 'ERROR:' or text:match 'WARN:'
     end, qflist)
     vim.fn.setqflist(filtered, 'r')
   end,

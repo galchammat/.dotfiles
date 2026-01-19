@@ -581,7 +581,7 @@ require('lazy').setup({
           --  This is where a variable was first declared, or where a function is defined, etc.
           --  To jump back, press <C-t>.
           map('grd', require('telescope.builtin').lsp_definitions, '[G]oto [D]efinition')
-          
+
           -- Traditional 'gd' mapping for LSP goto definition
           map('gd', vim.lsp.buf.definition, '[G]oto [D]efinition')
 
@@ -727,8 +727,15 @@ require('lazy').setup({
         --
         -- But for many setups, the LSP (`ts_ls`) will work just fine
         -- ts_ls = {},
-        --
-
+        ts_ls = {
+          -- optional: specify cmd if your global npm bin isn’t in $PATH
+          -- cmd = { "typescript-language-server", "--stdio" },
+          filetypes = { 'typescript', 'typescriptreact', 'javascript', 'javascriptreact' },
+          root_dir = function(fname)
+            return require('lspconfig.util').root_pattern('package.json', 'tsconfig.json', '.git')(fname)
+          end,
+          -- optional: you can set capabilities here if using cmp_nvim_lsp
+        },
         lua_ls = {
           -- cmd = { ... },
           -- filetypes = { ... },
