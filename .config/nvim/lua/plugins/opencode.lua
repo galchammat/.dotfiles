@@ -17,7 +17,7 @@ return {
 
     -- Recommended/example keymaps.
     vim.keymap.set({ 'n' }, '<leader>oa', function()
-      require('opencode').ask('@this: ')
+      require('opencode').ask '@this: '
     end, { desc = 'Ask opencode' })
     vim.keymap.set({ 'n' }, '<leader>ox', function()
       require('opencode').select()
@@ -28,6 +28,9 @@ return {
     vim.keymap.set({ 'n' }, '<leader>oo', function()
       require('opencode').toggle()
     end, { desc = 'Toggle opencode' })
+    require('which-key').add {
+      { '<leader>o', group = '+[o]pencode' },
+    }
 
     vim.keymap.set({ 'n', 'x' }, 'go', function()
       return require('opencode').operator '@this '

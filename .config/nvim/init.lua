@@ -493,6 +493,9 @@ require('lazy').setup({
         end
         vim.cmd('edit ~/.config/nvim/lua/plugins/' .. name .. '.lua')
       end, { desc = 'New plugin file' })
+      require('which-key').add {
+        { '<leader>v', group = '+N[v]im config' },
+      }
     end,
   },
 
