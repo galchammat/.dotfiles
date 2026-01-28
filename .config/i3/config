@@ -57,6 +57,9 @@ tiling_drag modifier titlebar
 set $term alacritty
 bindsym $mod+Return exec $term
 
+# start browser
+bindsym $mod+apostrophe exec /usr/bin/firefox
+
 # kill focused window
 bindsym $mod+Shift+q kill
 
