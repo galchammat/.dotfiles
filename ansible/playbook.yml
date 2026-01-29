@@ -4,3 +4,9 @@
     dot_repo_root: "{{ playbook_dir | dirname }}"
   roles:
     - { role: packages, tags: ["packages"] }
+    - { role: fonts, tags: ["fonts"] }
+    - { role: zsh, tags: ["zsh"]}
+    - { role: i3, tags: ["i3"]}
+    - { role: git, tags: ["git"]}
+
+

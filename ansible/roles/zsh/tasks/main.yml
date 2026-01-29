@@ -1,0 +1,95 @@
+- name: "Zsh | {{ ansible_facts['distribution'] }} | Check if zsh is already installed"
+  ansible.builtin.command: which zsh
+  register: zsh_check
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: "Zsh | {{ ansible_facts['distribution'] }} | Install zsh (system package)"
+  ansible.builtin.apt:
+    name:
+      - zsh
+    state: present
+  become: true
+  when:
+    - can_install_packages | default(false)
+    - zsh_check.rc != 0
+  register: zsh_system_install
+
+- name: "Zsh | {{ ansible_facts['distribution'] }} | Alternative zsh installation (no sudo)"
+  when:
+    - not (can_install_packages | default(false))
+    - zsh_check.rc != 0
+  block:
+    - name: "Zsh | Warning about missing zsh"
+      ansible.builtin.debug:
+        msg:
+          - "⚠️  Zsh is not installed and sudo is not available."
+          - ""
+          - "To install zsh manually:"
+          - "1. Ask your system administrator to install zsh"
+          - "2. Or download from: https://github.com/zsh-users/zsh"
+          - ""
+          - "Some dotfiles features will not work without zsh."
+
+- name: "Zsh | Check current shell"
+  ansible.builtin.command: "echo $SHELL"
+  register: current_shell
+  changed_when: false
+
+- name: "Zsh | Get zsh path"
+  ansible.builtin.command: which zsh
+  register: zsh_path
+  changed_when: false
+  failed_when: false
+  when: zsh_check.rc == 0 or zsh_system_install is succeeded
+
+- name: "Zsh | Set zsh as default shell"
+  ansible.builtin.user:
+    name: "{{ ansible_facts['user_id'] }}"
+    shell: "{{ zsh_path.stdout }}"
+  become: true
+  when:
+    - zsh_path.stdout is defined
+    - zsh_path.stdout != ""
+    - current_shell.stdout != zsh_path.stdout
+    - can_install_packages | default(false)
+
+- name: "Zsh | Warning about changing shell without sudo"
+  ansible.builtin.debug:
+    msg:
+      - "⚠️  Cannot set zsh as default shell without sudo access."
+      - ""
+      - "Your current shell: {{ current_shell.stdout }}"
+      - "Zsh location: {{ zsh_path.stdout | default('not found') }}"
+      - ""
+      - "To change your shell manually, run:"
+      - "chsh -s {{ zsh_path.stdout | default('/usr/bin/zsh') }}"
+  when:
+    - not (can_install_packages | default(false))
+    - zsh_path.stdout is defined
+    - current_shell.stdout != zsh_path.stdout
+
+- name: "Zsh | Check if oh-my-zsh is already installed"
+  ansible.builtin.stat:
+    path: "{{ ansible_facts['user_dir'] }}/.oh-my-zsh"
+  register: ohmyzsh_stat
+
+- name: "Zsh | Install oh-my-zsh"
+  ansible.builtin.shell: |
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+  args:
+    creates: "{{ ansible_facts['user_dir'] }}/.oh-my-zsh"
+  when:
+    - not ohmyzsh_stat.stat.exists
+    - zsh_check.rc == 0 or zsh_system_install is succeeded
+  register: ohmyzsh_install
+
+- name: "Zsh | Report installation status"
+  ansible.builtin.debug:
+    msg:
+      - "Zsh installation status:"
+      - "- Zsh installed: {{ '✓' if (zsh_check.rc == 0 or zsh_system_install is succeeded) else '✗' }}"
+      - "- Zsh is default shell: {{ '✓' if (zsh_path.stdout is defined and current_shell.stdout == zsh_path.stdout) else '✗' }}"
+      - "- Oh-My-Zsh installed: {{ '✓' if ohmyzsh_stat.stat.exists or ohmyzsh_install is succeeded else '✗' }}"
+      - "- Sudo available: {{ '✓' if can_install_packages | default(false) else '✗' }}"

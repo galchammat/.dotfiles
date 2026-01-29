@@ -1,0 +1,65 @@
+- name: "i3 | {{ ansible_facts['distribution'] }} | Check if i3 is installed"
+  ansible.builtin.command: which i3
+  register: i3_check
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: "i3 | Warning when i3 not installed"
+  ansible.builtin.debug:
+    msg:
+      - "⚠️  i3 is not installed."
+      - ""
+      - "Please run the packages role first to install i3."
+  when: i3_check.rc != 0
+
+- name: "i3 | Check if running under X11 display manager"
+  ansible.builtin.stat:
+    path: /usr/share/xsessions
+  register: xsessions_dir
+  when: i3_check.rc == 0
+
+- name: "i3 | Check if i3.desktop file exists"
+  ansible.builtin.stat:
+    path: /usr/share/xsessions/i3.desktop
+  register: i3_desktop_file
+  when: 
+    - i3_check.rc == 0
+    - xsessions_dir.stat.exists
+
+- name: "i3 | Set i3 as default window manager"
+  ansible.builtin.copy:
+    dest: "{{ ansible_facts['user_dir'] }}/.dmrc"
+    content: |
+      [Desktop]
+      Session=i3
+    mode: '0644'
+  when:
+    - i3_check.rc == 0
+    - xsessions_dir.stat.exists
+    - i3_desktop_file.stat.exists
+
+- name: "i3 | Set i3 as default for lightdm/gdm (AccountsService)"
+  ansible.builtin.lineinfile:
+    path: "/var/lib/AccountsService/users/{{ ansible_facts['user_id'] }}"
+    regexp: '^XSession='
+    line: 'XSession=i3'
+    create: true
+    mode: '0644'
+  become: true
+  when:
+    - i3_check.rc == 0
+    - xsessions_dir.stat.exists
+    - i3_desktop_file.stat.exists
+    - can_install_packages | default(false)
+
+- name: "i3 | Report configuration status"
+  ansible.builtin.debug:
+    msg:
+      - "i3 window manager status:"
+      - "- i3 installed: {{ '✓' if i3_check.rc == 0 else '✗' }}"
+      - "- X11 sessions available: {{ '✓' if (xsessions_dir.stat.exists | default(false)) else '✗' }}"
+      - "- i3.desktop found: {{ '✓' if (i3_desktop_file.stat.exists | default(false)) else '✗' }}"
+      - "- Default session configured: {{ '✓' if (i3_check.rc == 0 and xsessions_dir.stat.exists and i3_desktop_file.stat.exists) else '✗' }}"
+      - ""
+      - "{{ 'Note: Log out and log back in to use i3 as your window manager.' if (i3_check.rc == 0 and xsessions_dir.stat.exists) else '' }}"

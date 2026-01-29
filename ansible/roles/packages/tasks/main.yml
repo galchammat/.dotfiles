@@ -90,25 +90,46 @@
   become: yes
 
 # EXTERNAL DEB PACKAGES
+- name: Check if Cloudflared is already installed
+  ansible.builtin.command: which cloudflared
+  register: cloudflared_check
+  changed_when: false
+  failed_when: false
+  no_log: true
+
 - name: Download Cloudflared
   get_url:
     url: "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb"
     dest: "/tmp/cloudflared.deb"
   become: yes
+  when:
+    - cloudflared_check.rc != 0
+    - not ansible_check_mode
 
 - name: Install Cloudflared
   apt:
     deb: "/tmp/cloudflared.deb"
     state: present
   become: yes
+  when:
+    - cloudflared_check.rc != 0
+    - not ansible_check_mode
 
 - name: Clean up Cloudflared deb
   file:
     path: "/tmp/cloudflared.deb"
     state: absent
   become: yes
+  when: not ansible_check_mode
 
 # BUILD NEOVIM FROM SOURCE
+- name: Check if Neovim is already installed
+  ansible.builtin.command: which nvim
+  register: nvim_check
+  changed_when: false
+  failed_when: false
+  no_log: true
+
 - name: Install Neovim build dependencies
   apt:
     name:
@@ -120,6 +141,7 @@
       - build-essential
     state: present
   become: yes
+  when: nvim_check.rc != 0
 
 - name: Clone Neovim repository
   git:
@@ -127,6 +149,9 @@
     dest: '/tmp/neovim'
     version: stable
     depth: 1
+  when:
+    - nvim_check.rc != 0
+    - not ansible_check_mode
 
 - name: Build Neovim
   shell: |
@@ -134,6 +159,9 @@
     make CMAKE_BUILD_TYPE=RelWithDebInfo
   args:
     creates: /tmp/neovim/build/bin/nvim
+  when:
+    - nvim_check.rc != 0
+    - not ansible_check_mode
 
 - name: Install Neovim
   shell: |
@@ -142,9 +170,13 @@
   become: yes
   args:
     creates: /usr/local/bin/nvim
+  when:
+    - nvim_check.rc != 0
+    - not ansible_check_mode
 
 - name: Clean up Neovim source
   file:
     path: /tmp/neovim
     state: absent
+  when: not ansible_check_mode
 

@@ -1,0 +1,63 @@
+- name: "Fonts | Create fonts directory"
+  ansible.builtin.file:
+    path: "{{ ansible_facts['user_dir'] }}/.local/share/fonts"
+    state: directory
+    mode: '0755'
+
+- name: "Fonts | Check if Nerd Font already installed"
+  ansible.builtin.find:
+    paths: "{{ ansible_facts['user_dir'] }}/.local/share/fonts"
+    patterns: "*Nerd*Font*.ttf"
+  register: nerd_fonts_installed
+
+- name: "Fonts | Download JetBrainsMono Nerd Font"
+  ansible.builtin.get_url:
+    url: "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip"
+    dest: "/tmp/JetBrainsMono.zip"
+    mode: '0644'
+  when: nerd_fonts_installed.matched == 0
+
+- name: "Fonts | Check if unzip is installed"
+  ansible.builtin.command: which unzip
+  register: unzip_check
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: "Fonts | Install unzip if needed"
+  ansible.builtin.apt:
+    name: unzip
+    state: present
+  become: true
+  when:
+    - unzip_check.rc != 0
+    - nerd_fonts_installed.matched == 0
+    - can_install_packages | default(false)
+
+- name: "Fonts | Extract JetBrainsMono Nerd Font"
+  ansible.builtin.unarchive:
+    src: "/tmp/JetBrainsMono.zip"
+    dest: "{{ ansible_facts['user_dir'] }}/.local/share/fonts"
+    remote_src: yes
+  when: nerd_fonts_installed.matched == 0
+
+- name: "Fonts | Clean up downloaded zip"
+  ansible.builtin.file:
+    path: "/tmp/JetBrainsMono.zip"
+    state: absent
+  when: nerd_fonts_installed.matched == 0
+
+- name: "Fonts | Update font cache"
+  ansible.builtin.command: fc-cache -fv
+  changed_when: false
+  when: nerd_fonts_installed.matched == 0
+
+- name: "Fonts | Report installation status"
+  ansible.builtin.debug:
+    msg:
+      - "Nerd Fonts installation status:"
+      - "- Nerd Fonts found: {{ nerd_fonts_installed.matched }} files"
+      - "- JetBrainsMono installed: {{ '✓' if nerd_fonts_installed.matched > 0 else '✓ (just installed)' }}"
+      - ""
+      - "Note: JetBrainsMono Nerd Font includes all icons needed for nvim plugins."
+      - "You may need to restart your terminal to see the new font."

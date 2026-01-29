@@ -1,0 +1,322 @@
+- name: "Git | {{ ansible_facts['distribution'] }} | Check if git is already installed"
+  ansible.builtin.command: which git
+  register: git_check
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: "Git | {{ ansible_facts['distribution'] }} | Install git (system package)"
+  ansible.builtin.apt:
+    name:
+      - git
+    state: present
+  become: true
+  when:
+    - can_install_packages | default(false)
+    - git_check.rc != 0
+  register: git_system_install
+
+- name: "Git | {{ ansible_facts['distribution'] }} | Alternative git installation (no sudo)"
+  when:
+    - not (can_install_packages | default(false))
+    - git_check.rc != 0
+  block:
+    - name: "Git | Create ~/.local/bin directory"
+      ansible.builtin.file:
+        path: "{{ ansible_facts['env']['HOME'] }}/.local/bin"
+        state: directory
+        mode: '0755'
+
+    - name: "Git | Download git from source (requires build tools)"
+      ansible.builtin.debug:
+        msg:
+          - "⚠️  Git is not installed and sudo is not available."
+
+          - ""
+
+          - "To install git manually:"
+
+          - "1. Download from: https://github.com/git/git/releases"
+
+          - "2. Or use a portable git binary"
+
+          - "3. Or ask your system administrator to install git"
+
+          - ""
+
+          - "Some dotfiles features will not work without git."
+
+- name: "Git | {{ ansible_facts['distribution'] }} | Report installation status"
+  ansible.builtin.debug:
+    msg:
+      - "Git installation status:"
+      - "- Already installed: {{ '✓' if git_check.rc == 0 else '✗' }}"
+      - "- System install attempted: {{ '✓' if git_system_install is defined and git_system_install is succeeded else 'N/A' }}"
+      - "- Sudo available: {{ '✓' if can_install_packages | default(false) else '✗' }}"
+      - "when: git_check.rc != 0"
+
+- name: Install community.general collection
+  command: ansible-galaxy collection install community.general
+  args:
+    creates: "{{ ansible_facts['env']['HOME'] }}/.ansible/collections/ansible_collections/community/general"
+  delegate_to: localhost
+  run_once: true
+
+- name: "Git | Set color.ui"
+  community.general.git_config:
+    name: color.ui
+    scope: global
+    value: auto
+
+- name: "Git | Set diff.colorMoved"
+  community.general.git_config:
+    name: diff.colorMoved
+    scope: global
+    value: zebra
+
+- name: "Git | Set fetch.prune"
+  community.general.git_config:
+    name: fetch.prune
+    scope: global
+    value: true
+
+# git config --global --add url."git@github.com:".insteadOf "https://github.com/"
+# - name: "Git | Set URL to SSH"
+#   community.general.git_config:
+#     name: URL
+#     scope: global
+#     value: "git@github.com"
+
+- name: "Git | Set init.defaultBranch"
+  community.general.git_config:
+    name: init.defaultBranch
+    scope: global
+    value: main
+
+- name: "Git | Set rerere.enabled"
+  community.general.git_config:
+    name: rerere.enabled
+    scope: global
+    value: true
+
+- name: "Git | Set pull.ff"
+  community.general.git_config:
+    name: pull.ff
+    scope: global
+    value: only
+
+- name: "Git | Set pull.rebase"
+  community.general.git_config:
+    name: pull.rebase
+    scope: global
+    value: true
+
+- name: "Git | Set rebase.autoStash"
+  community.general.git_config:
+    name: rebase.autoStash
+    scope: global
+    value: true
+
+- name: "Git | Set user.email"
+  community.general.git_config:
+    name: user.email
+    scope: global
+    value: "{{ git_user_email }}"
+
+- name: "Git | Set user.name"
+  community.general.git_config:
+    name: user.name
+    scope: global
+    value: "{{ git_user_name }}"
+
+- name: "Git | Set user.signingkey"
+  community.general.git_config:
+    name: user.signingkey
+    scope: global
+    value: "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519.pub"
+
+- name: "Git | Set gpg.format"
+  community.general.git_config:
+    name: gpg.format
+    scope: global
+    value: ssh
+
+- name: "Git | Set commit.gpgsign"
+  community.general.git_config:
+    name: commit.gpgsign
+    scope: global
+    value: true
+
+- name: "Git | Set tag.gpgsign"
+  community.general.git_config:
+    name: tag.gpgsign
+    scope: global
+    value: true
+
+# === SSH KEY GENERATION & GITHUB SETUP ===
+- name: "Git | Get machine ID for unique identification"
+  ansible.builtin.slurp:
+    src: /etc/machine-id
+  register: machine_id_content
+
+- name: "Git | Set machine ID fact"
+  ansible.builtin.set_fact:
+    machine_id_short: "{{ (machine_id_content.content | b64decode | trim)[:8] }}"
+
+- name: "Git | Check if SSH key exists"
+  ansible.builtin.stat:
+    path: "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519"
+  register: ssh_private_key_stat
+
+- name: "Git | Generate SSH key (INTERACTIVE - will prompt for passphrase)"
+  ansible.builtin.command: >
+    ssh-keygen -t ed25519 
+    -C "{{ git_user_email }}" 
+    -f "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519"
+  when: 
+    - not ssh_private_key_stat.stat.exists
+    - not ansible_check_mode
+  register: ssh_key_generated
+
+- name: "Git | Display new SSH public key"
+  ansible.builtin.debug:
+    msg:
+      - "✓ SSH key generated at ~/.ssh/id_ed25519"
+      - "Public key:"
+      - "{{ lookup('file', ansible_facts['user_dir'] + '/.ssh/id_ed25519.pub') }}"
+  when: ssh_key_generated is changed
+
+- name: "Git | Ensure .ssh directory exists with correct permissions"
+  ansible.builtin.file:
+    path: "{{ ansible_facts['user_dir'] }}/.ssh"
+    state: directory
+    mode: '0700'
+
+- name: "Git | Configure SSH for GitHub"
+  ansible.builtin.blockinfile:
+    path: "{{ ansible_facts['user_dir'] }}/.ssh/config"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - GitHub"
+    block: |
+      Host github.com
+        HostName github.com
+        User git
+        IdentityFile ~/.ssh/id_ed25519
+        AddKeysToAgent yes
+    create: true
+    mode: '0600'
+  when: ssh_private_key_stat.stat.exists or ssh_key_generated is changed
+
+- name: "Git | Check if GitHub CLI (gh) is installed"
+  ansible.builtin.command: which gh
+  register: gh_check
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: "Git | Install GitHub CLI if missing"
+  ansible.builtin.apt:
+    name: gh
+    state: present
+  become: true
+  when:
+    - gh_check.rc != 0
+    - can_install_packages | default(false)
+
+- name: "Git | Warning when gh not available"
+  ansible.builtin.debug:
+    msg:
+      - "⚠️  GitHub CLI (gh) is not installed and cannot be installed."
+      - ""
+      - "To enable GitHub integration:"
+      - "1. Install gh manually or run the packages role"
+      - "2. Then run: gh auth login --git-protocol ssh --web"
+  when:
+    - gh_check.rc != 0
+    - not (can_install_packages | default(false))
+
+- name: "Git | Check if GitHub CLI is authenticated"
+  ansible.builtin.command: gh auth status
+  register: gh_auth_status
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: gh_check.rc == 0
+
+- name: "Git | Authenticate with GitHub (INTERACTIVE - opens browser)"
+  ansible.builtin.command: gh auth login --git-protocol ssh --web
+  when: 
+    - gh_check.rc == 0
+    - gh_auth_status.rc != 0
+    - not ansible_check_mode
+  register: gh_auth_result
+
+- name: "Git | Upload SSH key to GitHub"
+  ansible.builtin.command: >
+    gh ssh-key add "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519.pub" 
+    --title "{{ ansible_facts['hostname'] }}-{{ machine_id_short }}"
+  when: 
+    - gh_check.rc == 0
+    - (gh_auth_result is changed or (gh_auth_status.rc == 0 and ssh_key_generated is changed))
+    - not ansible_check_mode
+  register: gh_ssh_upload
+  failed_when: false
+
+- name: "Git | GitHub setup status"
+  ansible.builtin.debug:
+    msg:
+      - "GitHub setup complete:"
+      - "- SSH key: {{ ansible_facts['user_dir'] }}/.ssh/id_ed25519.pub"
+      - "- Key uploaded to GitHub as: {{ ansible_facts['hostname'] }}-{{ machine_id_short }}"
+      - "- Authentication: ✓"
+  when: 
+    - gh_check.rc == 0
+    - (gh_auth_result is changed or gh_auth_status.rc == 0)
+
+- name: "Git | Ensure ~/.config/git/allowed_signers exists"
+  ansible.builtin.file:
+    path: "{{ ansible_facts['user_dir'] }}/.config/git"
+    state: directory
+    mode: "0755"
+
+- name: "Git | Check if SSH key exists"
+  ansible.builtin.stat:
+    path: "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519.pub"
+  register: ssh_key_stat
+
+- name: "Git | Read SSH public key"
+  ansible.builtin.slurp:
+    src: "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519.pub"
+  register: ssh_pubkey_slurp
+  when: ssh_key_stat.stat.exists
+
+- name: "Git | Set SSH public key fact"
+  ansible.builtin.set_fact:
+    ssh_pubkey_content: "{{ ssh_pubkey_slurp.content | b64decode | trim }}"
+  when: ssh_key_stat.stat.exists
+
+- name: "Git | Configure allowed_signers with local SSH key"
+  ansible.builtin.blockinfile:
+    path: "{{ ansible_facts['user_dir'] }}/.config/git/allowed_signers"
+    block: "{{ git_user_email }} {{ ssh_pubkey_content }}"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - {{ ansible_facts['hostname'] }}"
+    mode: "0600"
+    create: true
+  when: ssh_key_stat.stat.exists
+
+- name: "Git | Warning when SSH key not found"
+  ansible.builtin.debug:
+    msg:
+      - "⚠️  SSH key not found at ~/.ssh/id_ed25519.pub"
+      - ""
+      - "Git commit signing is enabled but no SSH key exists."
+      - "Generate one with: ssh-keygen -t ed25519 -C '{{ git_user_email }}'"
+      - ""
+      - "Then run this playbook again to configure allowed_signers."
+  when: not ssh_key_stat.stat.exists
+
+- name: "Git | Set gpg.ssh.allowedSignersFile"
+  community.general.git_config:
+    name: gpg.ssh.allowedSignersFile
+    scope: global
+    value: "{{ ansible_facts['user_dir'] }}/.config/git/allowed_signers"
+
