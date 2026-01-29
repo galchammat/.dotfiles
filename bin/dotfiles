@@ -103,7 +103,7 @@ setup_bare_repo() {
   fi
 
   # Add alias to shell rc files if not present
-  ALIAS_LINE='alias config="git --git-dir=$HOME/.dotfiles --work-tree=$HOME"'
+  ALIAS_LINE='alias dot="git --git-dir=$HOME/.dotfiles --work-tree=$HOME"'
   for rcfile in "$HOME/.bashrc" "$HOME/.zshrc"; do
     if [[ -f "$rcfile" ]] && ! grep -q "alias config=" "$rcfile"; then
       echo "" >> "$rcfile"
