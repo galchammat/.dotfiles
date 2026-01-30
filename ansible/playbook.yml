@@ -2,6 +2,7 @@
   hosts: local
   vars:
     dot_repo_root: "{{ playbook_dir | dirname }}"
+    can_install_packages: true
   roles:
     - { role: nvm, tags: ["nvm"]}
     - { role: packages, tags: ["packages"] }
