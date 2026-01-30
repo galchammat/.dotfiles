@@ -2,7 +2,7 @@
 
 ## How to use
 
-This command runs the complete setup from faactory. 
+This command runs the complete setup from factory. 
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/galchammat/.dotfiles/main/bin/dotfiles)"
