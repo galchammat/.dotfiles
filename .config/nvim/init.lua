@@ -160,6 +160,12 @@ vim.o.inccommand = 'split'
 -- Show which line your cursor is on
 vim.o.cursorline = true
 
+-- indentation
+vim.opt.expandtab = true -- tabs → spaces
+vim.opt.tabstop = 2 -- a tab = 2 spaces
+vim.opt.shiftwidth = 2 -- >> << indent size
+vim.opt.softtabstop = 2 -- backspace behaves nicely
+
 -- Make floating windows slightly transparent
 vim.o.winblend = 15
 vim.o.pumblend = 15
@@ -171,8 +177,6 @@ vim.o.scrolloff = 10
 -- instead raise a dialog asking if you wish to save the current file(s)
 -- See `:help 'confirm'`
 vim.o.confirm = true
-
-vim.cmd 'filetype plugin indent on'
 
 -- [[ Basic Keymaps ]]
 --  See `:help vim.keymap.set()`
@@ -262,7 +266,6 @@ rtp:prepend(lazypath)
 -- NOTE: Here is where you install your plugins.
 require('lazy').setup({
   -- NOTE: Plugins can be added with a link (or for a github repo: 'owner/repo' link).
-  'NMAC427/guess-indent.nvim', -- Detect tabstop and shiftwidth automatically
 
   -- NOTE: Plugins can also be added by using a table,
   -- with the first argument being the link and the following
