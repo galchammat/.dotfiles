@@ -36,6 +36,7 @@
       - ninja-build
       - sqlite3
       - unzip
+      - just
 
       # CLI Utilities
       - pass
