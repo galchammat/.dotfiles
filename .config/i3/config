@@ -207,7 +207,7 @@ for_window [class="Alacritty"] floating enable
 for_window [class="Alacritty"] floating enable, resize set 2490 px 1370 px, move position center, move down 3 px
 
 # Wallpaper
-exec_always --no-startup-id feh --bg-fill ~/Pictures/wallpapers/default.jpg
+exec_always --no-startup-id feh --randomize --bg-fill ~/Pictures/wallpapers/
 exec_always --no-startup-id picom --daemon --log-level warn --log-file ~/.cache/picom.log
 
 # Toggle i3 status bar
