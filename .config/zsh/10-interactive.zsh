@@ -8,6 +8,8 @@ setopt HIST_REDUCE_BLANKS
 setopt SHARE_HISTORY
 setopt INC_APPEND_HISTORY
 
+export GPG_TTY=$(tty)
+
 # Vi mode
 bindkey -v  # ok, this overrides OMZ keymaps if you want vi mode
 
