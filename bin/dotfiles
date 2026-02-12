@@ -427,7 +427,7 @@ esac
 
 if ! [[ -d "$DOTFILES_GIT" ]]; then
   __task "Downloading dotfiles repository (This may take a minute)"
-  _cmd "git clone --bare --quiet https://github.com/galchammat/.dotfiles.git $DOTFILES_GIT"
+  _cmd "git clone --bare --quiet git@github.com:galchammat/.dotfiles.git $DOTFILES_GIT"
   __task "Checking out dotfiles to home directory"
   _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME checkout -f"
   _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME config --local status.showUntrackedFiles no"
