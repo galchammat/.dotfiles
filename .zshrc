@@ -71,6 +71,7 @@ ZSH_THEME="robbyrussell"
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
 plugins=(git)
+
 source $ZSH/oh-my-zsh.sh
 
 # User configuration
@@ -101,10 +102,3 @@ source $ZSH/oh-my-zsh.sh
 # Example aliases
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
-#
-# ############ Personal ###########
-ZSH_CONFIG="$HOME/.config/zsh"
-
-for f in $ZSH_CONFIG/*.zsh; do
-  source "$f"
-done
