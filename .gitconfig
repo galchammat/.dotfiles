@@ -1,12 +1,29 @@
 [user]
 	email = alchammatg@gmail.com
 	name = Ghazi Alchammat
-	signingkey = 6BB78665C21D3849DBC6C7C223642B2461BCEDB3
+	signingkey = /home/yog404/.ssh/id_ed25519
 [gpg]
-	format = openpgp
+	format = ssh
 [commit]
-	gpgsign = true
+	gpgsign = True
 [core]
 	editor = nvim
 [init]
 	defaultBranch = main
+[color]
+	ui = auto
+[diff]
+	colorMoved = zebra
+[fetch]
+	prune = True
+[rerere]
+	enabled = True
+[pull]
+	ff = only
+	rebase = True
+[rebase]
+	autoStash = True
+[tag]
+	gpgsign = True
+[gpg "ssh"]
+	allowedSignersFile = /home/yog404/.config/git/allowed_signers
