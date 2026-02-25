@@ -207,7 +207,7 @@ for_window [class="Alacritty"] floating enable
 for_window [class="Alacritty"] floating enable, resize set 2490 px 1370 px, move position center, move down 3 px
 
 # Wallpaper
-exec_always --no-startup-id feh --randomize --bg-fill ~/Pictures/wallpapers/
+exec_always --no-startup-id feh --bg-fill ~/Pictures/wallpapers/default.jpg
 exec_always --no-startup-id picom --daemon --log-level warn --log-file ~/.cache/picom.log
 
 # Toggle i3 status bar
@@ -215,4 +215,7 @@ bindsym --release $mod+b bar mode toggle
 
 # Screenshot (Flameshot)
 bindsym Print exec --no-startup-id flameshot gui
+
+# File manager (mainly for browser upload modal)
+exec_always --no-startup-id dbus-update-activation-environment --systemd GTK_USE_PORTAL=1
 
