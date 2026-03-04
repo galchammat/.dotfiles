@@ -27,3 +27,8 @@
 	gpgsign = True
 [gpg "ssh"]
 	allowedSignersFile = /home/yog404/.config/git/allowed_signers
+[merge]
+	tool = nvimdiff
+[mergetool]
+	prompt = false
+	keepBackup = false
