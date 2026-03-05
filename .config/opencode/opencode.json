@@ -1,0 +1,10 @@
+// opencode.jsonc
+{
+    "plugin": ["@tarquinen/opencode-dcp@latest"],
+    "server": {
+        "port": 4096,
+        "hostname": "0.0.0.0",
+        "mdns": true,
+        "cors": ["https://example.com"]
+    }
+}
