@@ -16,3 +16,5 @@ export VISUAL=nvim
 # NVM base dir (do NOT load yet)
 export NVM_DIR="$HOME/.nvm"
 
+# Dedicate to current job
+export job=/home/yog404/dev/career/job
