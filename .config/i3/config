@@ -214,8 +214,7 @@ exec_always --no-startup-id picom --daemon --log-level warn --log-file ~/.cache/
 bindsym --release $mod+b bar mode toggle
 
 # Screenshot (Flameshot)
-bindsym Print exec --no-startup-id flameshot gui
+bindsym Print exec --no-startup-id scrot ~/Pictures/screenshots/%Y-%m-%d_%H-%M-%S.png
 
 # File manager (mainly for browser upload modal)
 exec_always --no-startup-id dbus-update-activation-environment --systemd GTK_USE_PORTAL=1
-
