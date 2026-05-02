@@ -199,8 +199,8 @@ bar {
 	mode hide
 }
 
-# No border for Alacritty only
-for_window [class="Alacritty"] border none
+# Window modifications 
+for_window [class=".*"] border none 
 
 # --- Alacritty pseudo-fullscreen
 for_window [class="Alacritty"] floating enable
