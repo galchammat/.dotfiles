@@ -153,7 +153,6 @@ vim.o.list = true
 vim.opt.listchars = { tab = '» ', trail = '·', nbsp = '␣' }
 vim.opt.fileformat = 'unix'
 vim.opt.termguicolors = true
-
 -- Preview substitutions live, as you type!
 vim.o.inccommand = 'split'
 
@@ -304,7 +303,17 @@ require('lazy').setup({
     },
   },
   { 'github/copilot.vim' },
-
+  {
+    'folke/tokyonight.nvim',
+    priority = 1000,
+    opts = {
+      transparent = true,
+    },
+    config = function(_, opts)
+      require('tokyonight').setup(opts)
+      vim.cmd.colorscheme 'tokyonight'
+    end,
+  },
   -- NOTE: Plugins can also be configured to run Lua code when they are loaded.
   --
   -- This is often very useful to both group configuration, as well as handle
