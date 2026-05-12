@@ -668,6 +668,22 @@ require('lazy').setup({
             })
           end
 
+          -- hide lint messages in current window
+          vim.keymap.set('n', '<leader>td', function()
+            local bufnr = vim.api.nvim_get_current_buf()
+            local enabled = vim.diagnostic.is_enabled { bufnr = bufnr }
+            if enabled then
+              vim.diagnostic.disable(bufnr)
+            else
+              vim.diagnostic.enable(bufnr)
+            end
+          end)
+
+          -- yank file path of current buffer
+          vim.keymap.set('n', '<leader>yp', function()
+            vim.fn.setreg('+', vim.fn.expand '%:p')
+            print 'Copied path'
+          end, { desc = 'Copy file path' })
           -- The following code creates a keymap to toggle inlay hints in your
           -- code, if the language server you are using supports them
           --
