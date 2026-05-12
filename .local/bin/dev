@@ -17,7 +17,7 @@ fi
 # Session name derived from directory name (safe chars only)
 NAME="$(basename "$DIR")"
 NAME="${NAME//[^A-Za-z0-9_-]/_}"
-SESSION="dev-${NAME}"
+SESSION="${NAME}"
 
 # If session exists, just switch/attach to it
 if tmux has-session -t "$SESSION" 2>/dev/null; then
