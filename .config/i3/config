@@ -208,7 +208,7 @@ for_window [class="Alacritty"] floating enable, resize set 2490 px 1370 px, move
 
 # Wallpaper
 exec_always --no-startup-id feh --bg-fill ~/Pictures/wallpapers/default.jpg
-exec_always --no-startup-id picom --daemon --log-level warn --log-file ~/.cache/picom.log
+exec_always --no-startup-id picom --config ~/.config/picom/picom.conf --daemon --log-level warn --log-file ~/.cache/picom.log
 
 # Toggle i3 status bar
 bindsym --release $mod+b bar mode toggle
