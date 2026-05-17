@@ -18,3 +18,9 @@ export NVM_DIR="$HOME/.nvm"
 
 # Dedicate to current job
 export job=/home/yog404/dev/career/job
+
+# GCloud
+export CLAUDE_CODE_USE_VERTEX=1
+export CLOUD_ML_REGION=global
+export ANTHROPIC_VERTEX_PROJECT_ID=itpc-gcp-hcm-pe-eng-claude
+
