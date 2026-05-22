@@ -4,6 +4,7 @@ path=(
   /usr/local/go/bin
   /home/yog404/.opencode/bin
   $HOME/go/bin
+  $HOME/.local/bin
   $path
 )
 
@@ -15,9 +16,6 @@ export VISUAL=nvim
 
 # NVM base dir (do NOT load yet)
 export NVM_DIR="$HOME/.nvm"
-
-# Dedicate to current job
-export job=/home/yog404/dev/career/job
 
 # GCloud
 export CLAUDE_CODE_USE_VERTEX=1
