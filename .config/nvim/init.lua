@@ -497,6 +497,8 @@ require('lazy').setup({
         builtin.find_files { cwd = vim.fn.stdpath 'config' }
       end, { desc = '[S]earch [N]eovim files' })
 
+      -- Shortcuts for editing various config files
+      vim.keymap.set('n', '<leader>vh', '<cmd>edit ~/.config/hypr/hyprland.lua<cr>', { desc = 'Edit hyprland' })
       -- Shortcuts for editing and sourcing your Neovim config file
       vim.keymap.set('n', '<leader>ve', '<cmd>edit $MYVIMRC<cr>', { desc = 'Edit config' })
       vim.keymap.set('n', '<leader>vs', '<cmd>source $MYVIMRC<cr>', { desc = 'Source config' })
@@ -784,6 +786,12 @@ require('lazy').setup({
             Lua = {
               completion = {
                 callSnippet = 'Replace',
+              },
+              workspace = {
+                library = {
+                  '/usr/share/hypr/stubs',
+                },
+                checkThirdParty = false,
               },
               -- You can toggle below to ignore Lua_LS's noisy `missing-fields` warnings
               -- diagnostics = { disable = { 'missing-fields' } },
