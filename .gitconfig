@@ -1,7 +1,7 @@
 [user]
 	email = alchammatg@gmail.com
 	name = Ghazi Alchammat
-	signingkey = /home/yog404/.ssh/id_ed25519
+	signingkey = ~/.ssh/id_ed25519
 [gpg]
 	format = ssh
 [commit]
@@ -25,10 +25,10 @@
 	autoStash = True
 [tag]
 	gpgsign = True
-[gpg "ssh"]
-	allowedSignersFile = /home/yog404/.config/git/allowed_signers
 [merge]
 	tool = nvimdiff
 [mergetool]
 	prompt = false
 	keepBackup = false
+[gpg "ssh"]
+	allowedSignersFile = ~/.config/git/allowed_signers
