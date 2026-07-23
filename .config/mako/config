@@ -1,1 +1,5 @@
 group-by=app-name,summary
+default-timeout=5000
+
+[app-name=Firefox]
+invisible=1
