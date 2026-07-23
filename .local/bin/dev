@@ -29,8 +29,8 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
 fi
 
 # Create session with windows starting in DIR
-tmux new-session -d -s "$SESSION" -n nvim -c "$DIR" "nvim"
-tmux new-window -t "$SESSION:2" -n zsh -c "$DIR" zsh
+tmux new-session -d -s "$SESSION" -n copilot -c "$DIR" "copilot"
+tmux new-window -t "$SESSION:2" -n nvim -c "$DIR" "nvim"
 
 # Focus nvim window by default
 tmux select-window -t "$SESSION:1"
