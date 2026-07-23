@@ -43,11 +43,12 @@ local menu = "exec rofi -show drun"
 hl.on("hyprland.start", function()
 	--   hl.exec_cmd(terminal)
 	--   hl.exec_cmd("nm-applet")
-	hl.exec_cmd("/usr/libexec/xdg-desktop-portal")
+	hl.exec_cmd("gnome-keyring-daemon --start --components=pkcs11,secrets,ssh")
 	hl.exec_cmd("hyprpolkitagent")
 	hl.exec_cmd("mako")
 	hl.exec_cmd("hyprpaper")
 	hl.exec_cmd("hypridle")
+	hl.exec_cmd("hyprsunset -t 2000")
 end)
 
 -------------------------------
@@ -272,6 +273,10 @@ hl.bind(mainMod .. " + h", hl.dsp.focus({ direction = "left" }))
 hl.bind(mainMod .. " + l", hl.dsp.focus({ direction = "right" }))
 hl.bind(mainMod .. " + k", hl.dsp.focus({ direction = "up" }))
 hl.bind(mainMod .. " + j", hl.dsp.focus({ direction = "down" }))
+
+-- Screenshot
+hl.bind("Print", hl.dsp.exec_cmd("grim - | wl-copy"))
+hl.bind("SHIFT + Print", hl.dsp.exec_cmd([[grim -g "$(slurp -w 0)" - | wl-copy]]))
 
 -- Switch workspaces with mainMod + [0-9]
 -- Move active window to a workspace with mainMod + SHIFT + [0-9]
