@@ -6,7 +6,7 @@
   no_log: true
 
 - name: "Git | {{ ansible_facts['distribution'] }} | Install git (system package)"
-  ansible.builtin.apt:
+  ansible.builtin.package:
     name:
       - git
     state: present
@@ -214,7 +214,7 @@
   no_log: true
 
 - name: "Git | Install GitHub CLI if missing"
-  ansible.builtin.apt:
+  ansible.builtin.package:
     name: gh
     state: present
   become: true

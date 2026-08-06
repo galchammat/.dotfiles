@@ -7,7 +7,7 @@
   register: nvm_stat
 
 - name: "NVM | Install NVM dependencies"
-  ansible.builtin.apt:
+  ansible.builtin.package:
     name:
       - curl
       - git

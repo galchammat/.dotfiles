@@ -6,7 +6,7 @@
   no_log: true
 
 - name: "Zsh | {{ ansible_facts['distribution'] }} | Install zsh (system package)"
-  ansible.builtin.apt:
+  ansible.builtin.package:
     name:
       - zsh
     state: present

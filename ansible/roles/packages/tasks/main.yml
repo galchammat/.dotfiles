@@ -1,12 +1,41 @@
-# APT PACKAGES
-- name: Update apt cache
-  apt:
+---
+# COMMON PACKAGES (distro-agnostic names that work on both apt and dnf)
+- name: "Packages | Update package cache (Debian/Ubuntu)"
+  ansible.builtin.apt:
     update_cache: yes
     cache_valid_time: 3600
   become: yes
+  when: ansible_facts['os_family'] == 'Debian'
 
-- name: Install apt packages
-  apt:
+- name: "Packages | Install common packages"
+  ansible.builtin.package:
+    name:
+      # Terminal & Shell
+      - tmux
+      - zsh
+
+      # Development Tools
+      - cmake
+      - curl
+      - gettext
+      - git
+      - gh
+      - ninja-build
+      - sqlite3
+      - unzip
+
+      # CLI Utilities
+      - ripgrep
+
+      # Security & Privacy
+      - gnupg2
+      - openssh-server
+    state: present
+  become: yes
+
+# DEBIAN/UBUNTU-SPECIFIC PACKAGES
+- name: "Packages | Install Debian-specific packages"
+  ansible.builtin.apt:
     name:
       # Package Managers
       - flatpak
@@ -19,28 +48,14 @@
       - i3
       - picom
 
-      # Terminal & Shell
+      # Terminal
       - alacritty
-      - tmux
-      - zsh
 
-      # Development Tools
+      # Development
       - build-essential
-      - cmake
-      - curl
-      - gettext
-      - git
-      - gh
       - libgtk-3-dev
       - libwebkit2gtk-4.1-dev
-      - ninja-build
-      - sqlite3
-      - unzip
       - just
-
-      # CLI Utilities
-      - pass
-      - ripgrep
 
       # Audio
       - pavucontrol
@@ -53,56 +68,80 @@
       - wl-clipboard
       - xclip
 
-      # Security & Privacy
-      - gnupg2
-      - openssh-server
+      # Security
       - rng-tools
 
       # System Tools
       - netdata
-      # refind removed - changes boot manager unexpectedly
 
-      # Pop!_OS Specific
-      - libpop-upgrade-gtk
-      - pop-upgrade
-
+      # Passwords
+      - pass
     state: present
   become: yes
- 
+  when: ansible_facts['os_family'] == 'Debian'
+
+# FEDORA-SPECIFIC PACKAGES
+- name: "Packages | Install Fedora-specific packages"
+  ansible.builtin.dnf:
+    name:
+      # Development
+      - gcc
+      - gcc-c++
+      - make
+      - gtk3-devel
+      - webkit2gtk4.1-devel
+      - just
+
+      # Terminal
+      - alacritty
+
+      # CLI Utilities
+      - pass
+
+      # Clipboard
+      - wl-clipboard
+      - xclip
+    state: present
+  become: yes
+  when: ansible_facts['os_family'] == 'RedHat'
+
 # FLATPAK SETUP
-- name: Add Flathub repository
+- name: "Packages | Add Flathub repository"
   flatpak_remote:
     name: flathub
     state: present
     flatpakrepo_url: https://flathub.org/repo/flathub.flatpakrepo
   become: yes
+  when: ansible_facts['os_family'] == 'Debian'
 
-- name: Install Discord via Flatpak
+- name: "Packages | Install Discord via Flatpak"
   flatpak:
     name: com.discordapp.Discord
     state: present
     remote: flathub
     method: system
   become: yes
+  when: ansible_facts['os_family'] == 'Debian'
 
-- name: Install Flameshot via Flatpak
+- name: "Packages | Install Flameshot via Flatpak"
   flatpak:
     name: org.flameshot.Flameshot
     state: present
     remote: flathub
     method: system
   become: yes
+  when: ansible_facts['os_family'] == 'Debian'
 
 # BUILD NEOVIM FROM SOURCE
-- name: Check if Neovim is already installed
+- name: "Packages | Check if Neovim is already installed"
   ansible.builtin.command: which nvim
   register: nvim_check
   changed_when: false
   failed_when: false
   no_log: true
 
-- name: Install Neovim build dependencies
-  apt:
+- name: "Packages | Install Neovim build dependencies (Debian)"
+  ansible.builtin.apt:
     name:
       - ninja-build
       - gettext
@@ -112,9 +151,28 @@
       - build-essential
     state: present
   become: yes
-  when: nvim_check.rc != 0
+  when:
+    - nvim_check.rc != 0
+    - ansible_facts['os_family'] == 'Debian'
 
-- name: Clone Neovim repository
+- name: "Packages | Install Neovim build dependencies (Fedora)"
+  ansible.builtin.dnf:
+    name:
+      - ninja-build
+      - gettext
+      - cmake
+      - unzip
+      - curl
+      - gcc
+      - gcc-c++
+      - make
+    state: present
+  become: yes
+  when:
+    - nvim_check.rc != 0
+    - ansible_facts['os_family'] == 'RedHat'
+
+- name: "Packages | Clone Neovim repository"
   git:
     repo: 'https://github.com/neovim/neovim.git'
     dest: '/tmp/neovim'
@@ -124,7 +182,7 @@
     - nvim_check.rc != 0
     - not ansible_check_mode
 
-- name: Build Neovim
+- name: "Packages | Build Neovim"
   shell: |
     cd /tmp/neovim
     make CMAKE_BUILD_TYPE=RelWithDebInfo
@@ -134,7 +192,7 @@
     - nvim_check.rc != 0
     - not ansible_check_mode
 
-- name: Install Neovim
+- name: "Packages | Install Neovim"
   shell: |
     cd /tmp/neovim
     make install
@@ -145,27 +203,26 @@
     - nvim_check.rc != 0
     - not ansible_check_mode
 
-- name: Clean up Neovim source
+- name: "Packages | Clean up Neovim source"
   file:
     path: /tmp/neovim
     state: absent
   when: not ansible_check_mode
 
 # INSTALL OPENCODE
-- name: Check if OpenCode is already installed
+- name: "Packages | Check if OpenCode is already installed"
   ansible.builtin.command: which opencode
   register: opencode_check
   changed_when: false
   failed_when: false
   no_log: true
 
-- name: Install OpenCode globally via npm
+- name: "Packages | Install OpenCode globally via npm"
   ansible.builtin.shell: |
     source {{ ansible_facts['user_dir'] }}/.nvm/nvm.sh
     npm install -g opencode-ai
   args:
     executable: /bin/bash
-  when: 
+  when:
     - opencode_check.rc != 0
     - not ansible_check_mode
-
