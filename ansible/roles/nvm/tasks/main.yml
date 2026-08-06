@@ -11,9 +11,9 @@
     name:
       - curl
       - git
+      - gawk
     state: present
   become: true
-  when: not nvm_stat.stat.exists
 
 - name: "NVM | Download and install NVM"
   ansible.builtin.shell: >
