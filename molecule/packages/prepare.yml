@@ -1,0 +1,39 @@
+---
+- name: Prepare a clean Fedora machine
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Install the minimum needed for ansible to manage this host
+      ansible.builtin.raw: |
+        dnf install -y -q python3 sudo shadow-utils tar
+      changed_when: false
+
+    - name: Gather facts now that python is available
+      ansible.builtin.setup:
+
+    - name: Create the unprivileged workstation user
+      ansible.builtin.user:
+        name: tester
+        shell: /bin/bash
+        create_home: true
+
+    - name: Grant passwordless sudo
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/tester
+        content: "tester ALL=(ALL) NOPASSWD: ALL\n"
+        mode: '0440'
+        validate: /usr/sbin/visudo -csf %s
+
+    # Proves the role installs these rather than inheriting them from the image,
+    # which would make the whole scenario a false pass.
+    - name: Confirm the toolchain under test is absent to begin with
+      ansible.builtin.command:
+        cmd: sh -c 'command -v cmake ninja gettext nvim'
+      register: toolchain_present
+      changed_when: false
+      failed_when: false
+
+    - name: Assert a genuinely clean starting point
+      ansible.builtin.assert:
+        that: toolchain_present.rc != 0
+        fail_msg: "Base image already ships part of the toolchain: {{ toolchain_present.stdout }}"

@@ -15,12 +15,9 @@
       - zsh
 
       # Development Tools
-      - cmake
       - curl
-      - gettext
       - git
       - gh
-      - ninja-build
       - sqlite3
       - stow
       - unzip

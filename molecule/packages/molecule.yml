@@ -1,0 +1,43 @@
+---
+# Exercises the packages role on a clean Fedora container.
+#
+# Added to answer a specific question empirically: the neovim source build was
+# replaced by the prebuilt release, so are cmake / ninja-build / gettext still
+# needed? Nothing in the playbook compiles any more, but that is an argument,
+# not evidence. This scenario is the evidence, and it keeps covering the role
+# afterwards.
+#
+# It is deliberately not part of the default scenario: installing the full
+# desktop package set is slow, while the stow role has to stay fast to iterate on.
+driver:
+  name: podman
+
+platforms:
+  - name: dotfiles-packages-fedora
+    image: quay.io/fedora/fedora:41
+    pre_build_image: true
+    command: /bin/sleep infinity
+
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: prepare.yml
+    converge: converge.yml
+    verify: verify.yml
+  env:
+    ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/ansible/roles"
+  config_options:
+    defaults:
+      stdout_callback: ansible.builtin.default
+      result_format: yaml
+      display_skipped_hosts: false
+
+scenario:
+  test_sequence:
+    - destroy
+    - create
+    - prepare
+    - converge
+    - idempotence
+    - verify
+    - destroy

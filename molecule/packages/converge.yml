@@ -1,0 +1,16 @@
+---
+- name: Install packages
+  hosts: all
+  gather_facts: true
+  vars:
+    ansible_user: tester
+    can_install_packages: true
+  tasks:
+    # The opencode task at the end of the role shells out to nvm, which the nvm
+    # role provides. Skipped here: this scenario is about system packages, and
+    # downloading a node toolchain would double the runtime.
+    - name: Run the packages role
+      ansible.builtin.include_role:
+        name: packages
+      vars:
+        opencode_check: { rc: 0 }

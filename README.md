@@ -120,6 +120,10 @@ compares `nvim --version` against the pin and only downloads when they differ.
 A machine still carrying the old source-built binary at `/usr/local/bin/nvim`
 has it replaced by the symlink automatically.
 
+Because nothing is compiled any more, `cmake`, `ninja-build` and `gettext` are
+no longer installed. `gcc`/`gcc-c++`/`make` (Fedora) and `build-essential`
+(Debian) stay, since nvim-treesitter and Mason compile at runtime.
+
 ## Testing
 
 Two molecule scenarios run against Fedora containers under podman:
@@ -131,6 +135,7 @@ python3 -m venv .venv
 
 .venv/bin/molecule test -s default     # stow role: linking + idempotence
 .venv/bin/molecule test -s bootstrap   # bin/dotfiles clone on a bare machine
+.venv/bin/molecule test -s packages    # package set + neovim install
 ```
 
 `default` applies the `stow` role to a clean unprivileged user and asserts that
@@ -142,6 +147,11 @@ reports no changes.
 ssh-agent and no GitHub token. It exists because the clone happens in bash
 before Ansible starts, so the `default` scenario cannot cover it.
 
+`packages` installs the package set on a clean Fedora container and asserts that
+every command the rest of the setup depends on resolves, and that Neovim matches
+the pinned version and finds its runtime through the `/usr/local/bin` symlink.
+It is separate from `default` because installing the full desktop package set is
+slow, and the stow role needs to stay quick to iterate on.
 ## Migrating from the bare repository
 
 Earlier versions cloned a bare repo to `~/.dotfiles.git` and checked it out

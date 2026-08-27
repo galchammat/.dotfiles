@@ -1,0 +1,102 @@
+---
+- name: Verify the package set is usable
+  hosts: all
+  gather_facts: true
+  vars:
+    ansible_user: tester
+
+    # Commands the shipped configs actually invoke, or that other roles depend
+    # on. This is the real contract of the packages role: whatever the rest of
+    # the setup needs at runtime must be here.
+    required_commands:
+      - nvim      # EDITOR/VISUAL, and the tmux + zsh configs call it
+      - tmux
+      - zsh
+      - git
+      - gh        # git role authenticates with it
+      - stow      # stow role depends on it
+      - rg
+      - just      # referenced by .local/bin scripts
+      - xclip     # tmux clipboard integration
+      - pass
+      - unzip     # fonts role extracts the nerd font with it
+      - curl
+
+  tasks:
+    # Role defaults are not in scope in a standalone verify play, so the pinned
+    # version is read from the same file the role uses. Hard-coding it here
+    # would let the test drift away from what the role installs.
+    - name: Load the packages role defaults
+      ansible.builtin.include_vars:
+        file: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/ansible/roles/packages/defaults/main.yml"
+
+    - name: Check each required command resolves
+      ansible.builtin.command:
+        cmd: sh -c 'command -v {{ item }}'
+      register: cmd_check
+      changed_when: false
+      failed_when: false
+      loop: "{{ required_commands }}"
+
+    - name: Assert every required command is present
+      ansible.builtin.assert:
+        that: item.rc == 0
+        fail_msg: "'{{ item.item }}' is not installed, but the setup depends on it."
+      loop: "{{ cmd_check.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # --- neovim came from the prebuilt release, not a source build -----------
+    - name: Read the installed neovim version
+      ansible.builtin.command:
+        cmd: nvim --version
+      register: nvim_ver
+      changed_when: false
+
+    - name: Assert neovim matches the pinned version
+      ansible.builtin.assert:
+        that: (nvim_ver.stdout_lines | first | trim) == ('NVIM ' ~ neovim_version)
+        fail_msg: >-
+          Expected NVIM {{ neovim_version }}, got
+          "{{ nvim_ver.stdout_lines | first | default('nothing') }}".
+
+    - name: Neovim resolves to the prefix, via the PATH link
+      ansible.builtin.command:
+        cmd: sh -c 'readlink -f "$(command -v nvim)"'
+      register: nvim_real
+      changed_when: false
+
+    - name: Assert neovim is the linked prebuilt binary
+      ansible.builtin.assert:
+        that: nvim_real.stdout | trim == (neovim_prefix ~ '/bin/nvim')
+        fail_msg: "nvim resolves to {{ nvim_real.stdout }}, expected {{ neovim_prefix }}/bin/nvim"
+
+    # nvim finds its runtime relative to the *real* path of the binary, so this
+    # is what proves the /usr/local/bin symlink has not broken the install.
+    - name: Neovim finds its runtime files through the link
+      ansible.builtin.command:
+        cmd: nvim --headless -c "lua io.stderr:write(vim.env.VIMRUNTIME)" -c qa
+      register: nvim_runtime
+      changed_when: false
+
+    - name: Assert the runtime resolves inside the prefix
+      ansible.builtin.assert:
+        that: nvim_runtime.stderr is search(neovim_prefix)
+        fail_msg: "VIMRUNTIME is '{{ nvim_runtime.stderr }}', expected it under {{ neovim_prefix }}."
+
+    # --- report which build tools ended up installed -------------------------
+    # Not an assertion: this scenario exists partly to show what the package set
+    # actually provides, so the list can be trimmed on evidence.
+    - name: Check for build tooling
+      ansible.builtin.command:
+        cmd: sh -c 'command -v {{ item }}'
+      register: buildtool_check
+      changed_when: false
+      failed_when: false
+      loop: [cc, gcc, g++, make, cmake, ninja, msgfmt]
+
+    - name: Report build tooling present
+      ansible.builtin.debug:
+        msg: >-
+          {{ buildtool_check.results
+             | selectattr('rc', 'equalto', 0) | map(attribute='item') | list }}
