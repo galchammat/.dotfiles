@@ -1,0 +1,36 @@
+---
+# Directory inside the dotfiles repo that holds the stow packages.
+stow_dir: "{{ dotfiles_repo_root }}/stow"
+
+# Everything is stowed relative to the user's home directory. The path of a
+# file *inside* a package is its path relative to this target, so
+# stow/nvim/.config/nvim/init.lua lands at ~/.config/nvim/init.lua.
+stow_target: "{{ ansible_facts['user_dir'] }}"
+
+# Packages to skip. Empty by default: every directory under stow_dir is
+# stowed. Override per-machine, e.g. on a headless box:
+#   stow_exclude: [hypr, i3, mako, rofi, alacritty, kitty, systemd, xdg-portal]
+stow_exclude: []
+
+# Never fold directories into a single symlink. Only leaf files are linked and
+# real directories are created instead. This matters because several tools
+# write sibling files next to their config (lazy-lock.json in ~/.config/nvim,
+# allowed_signers in ~/.config/git, hosts.yml in ~/.config/gh). With folding
+# enabled those writes would land inside the git repo.
+stow_no_folding: true
+
+# Where pre-existing real files that collide with a package get moved.
+stow_backup_dir: "{{ ansible_facts['user_dir'] }}/.dotfiles-backup"
+
+# Files that are superseded by a stowed XDG equivalent. git and tmux both still
+# honour these legacy locations, and git in particular ignores
+# ~/.config/git/config entirely whenever ~/.gitconfig exists, so leaving them in
+# place would silently defeat the stowed config. They are moved into
+# stow_backup_dir rather than deleted.
+stow_superseded_paths:
+  - .gitconfig
+  - .tmux.conf
+
+# The dotfiles command lives in the repo (bin/dotfiles) and is linked here so it
+# resolves on PATH without the repo itself being stowed into $HOME.
+stow_command_link: "{{ ansible_facts['user_dir'] }}/.local/bin/dotfiles"

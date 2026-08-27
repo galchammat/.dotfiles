@@ -1,0 +1,55 @@
+---
+- name: Prepare a clean Fedora workstation
+  hosts: all
+  gather_facts: false
+  remote_user: root
+  tasks:
+    - name: Install python and sudo so ansible can manage this host
+      ansible.builtin.raw: |
+        dnf install -y -q python3 sudo shadow-utils ncurses procps-ng tar findutils git
+      changed_when: false
+
+    - name: Gather facts now that python is available
+      ansible.builtin.setup:
+
+    - name: Create the unprivileged workstation user
+      ansible.builtin.user:
+        name: tester
+        shell: /bin/bash
+        create_home: true
+
+    - name: Grant passwordless sudo
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/tester
+        content: "tester ALL=(ALL) NOPASSWD: ALL\n"
+        mode: '0440'
+        validate: /usr/sbin/visudo -csf %s
+
+    # A real Fedora user gets these from /etc/skel. They collide with the zsh
+    # package, so this is what exercises the stow role's conflict backup.
+    - name: Ensure the shell rc files exist as real files
+      ansible.builtin.copy:
+        dest: "/home/tester/{{ item.name }}"
+        content: "{{ item.content }}"
+        owner: tester
+        group: tester
+        mode: '0644'
+      loop:
+        - { name: .bashrc, content: "# stock bashrc from /etc/skel\n" }
+        - { name: .zshrc, content: "ORIGINAL-ZSHRC-MUST-SURVIVE\n" }
+      loop_control:
+        label: "{{ item.name }}"
+
+    # git reads ~/.config/git/config only when ~/.gitconfig is absent, and tmux
+    # loads ~/.tmux.conf in addition to the XDG file. A migrating machine has
+    # both, so seed them to prove the role moves them out of the way.
+    - name: Seed legacy files that would shadow the stowed XDG config
+      ansible.builtin.copy:
+        dest: "/home/tester/{{ item }}"
+        content: "LEGACY-{{ item }}-MUST-BE-MOVED\n"
+        owner: tester
+        group: tester
+        mode: '0644'
+      loop:
+        - .gitconfig
+        - .tmux.conf

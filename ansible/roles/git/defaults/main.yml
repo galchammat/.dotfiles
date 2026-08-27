@@ -1,0 +1,6 @@
+---
+# Machine-generated git settings are written to this file rather than to
+# ~/.config/git/config, which is a symlink into the dotfiles repo. Writing
+# through that symlink would modify a tracked file and leave the repo dirty.
+# ~/.config/git/config includes this file, so the settings still apply.
+git_local_config: "{{ ansible_facts['user_dir'] }}/.config/git/config.local"

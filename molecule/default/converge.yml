@@ -1,0 +1,44 @@
+---
+- name: Package the working tree for the container
+  hosts: localhost
+  gather_facts: false
+  vars:
+    repo_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+  tasks:
+    # Ship the working tree, not HEAD, so uncommitted changes are what gets
+    # tested. .venv and .git are excluded: one is large, the other irrelevant.
+    - name: Create a tarball of the repository
+      ansible.builtin.command:
+        cmd: >-
+          tar --create --file {{ molecule_ephemeral_directory }}/dotfiles.tar
+          --exclude=.venv --exclude=.git --exclude=molecule/*/  -C {{ repo_root }} .
+      # Test scaffolding, not part of the role under test: reporting "changed"
+      # here would break the idempotence check for reasons unrelated to stow.
+      changed_when: false
+      vars:
+        molecule_ephemeral_directory: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
+
+- name: Apply the dotfiles
+  hosts: all
+  gather_facts: true
+  vars:
+    # Connect as the unprivileged workstation user created in prepare, so stow
+    # links into /home/tester the way it would on a real machine.
+    ansible_user: tester
+    dotfiles_repo_root: "{{ ansible_facts['user_dir'] }}/.dotfiles"
+    can_install_packages: true
+  tasks:
+    - name: Create the dotfiles directory
+      ansible.builtin.file:
+        path: "{{ dotfiles_repo_root }}"
+        state: directory
+        mode: '0755'
+
+    - name: Unpack the repository into place
+      ansible.builtin.unarchive:
+        src: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/dotfiles.tar"
+        dest: "{{ dotfiles_repo_root }}"
+
+    - name: Run the stow role
+      ansible.builtin.include_role:
+        name: stow

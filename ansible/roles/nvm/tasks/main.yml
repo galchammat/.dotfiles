@@ -67,19 +67,10 @@
     - not ansible_check_mode
     - node_version.stdout is defined
 
-- name: "NVM | Ensure NVM is sourced in .zshrc"
-  ansible.builtin.blockinfile:
-    path: "{{ ansible_facts['user_dir'] }}/.zshrc"
-    marker: "# {mark} ANSIBLE MANAGED BLOCK - NVM"
-    block: |
-      # NVM - Node Version Manager
-      export NVM_DIR="$HOME/.nvm"
-      [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-      [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-    create: false
-    insertafter: EOF
-  when: ansible_facts['user_shell'] is search('zsh')
-
+# ~/.zshrc is a symlink into the dotfiles repo, so a blockinfile here would
+# modify a tracked file and leave the repo dirty. It is also unnecessary:
+# .zshenv sources ~/.config/zsh/*.zsh, where 00-env.zsh exports NVM_DIR and
+# 90-tools.zsh sources nvm.sh already.
 - name: "NVM | Ensure NVM is sourced in .bashrc"
   ansible.builtin.blockinfile:
     path: "{{ ansible_facts['user_dir'] }}/.bashrc"

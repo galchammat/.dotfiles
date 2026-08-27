@@ -65,92 +65,107 @@
 - name: "Git | Set color.ui"
   community.general.git_config:
     name: color.ui
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: auto
 
 - name: "Git | Set diff.colorMoved"
   community.general.git_config:
     name: diff.colorMoved
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: zebra
 
 - name: "Git | Set fetch.prune"
   community.general.git_config:
     name: fetch.prune
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: true
 
 # git config --global --add url."git@github.com:".insteadOf "https://github.com/"
 # - name: "Git | Set URL to SSH"
 #   community.general.git_config:
 #     name: URL
-#     scope: global
+#     scope: file
+    file: "{{ git_local_config }}"
 #     value: "git@github.com"
 
 - name: "Git | Set init.defaultBranch"
   community.general.git_config:
     name: init.defaultBranch
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: main
 
 - name: "Git | Set rerere.enabled"
   community.general.git_config:
     name: rerere.enabled
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: true
 
 - name: "Git | Set pull.ff"
   community.general.git_config:
     name: pull.ff
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: only
 
 - name: "Git | Set pull.rebase"
   community.general.git_config:
     name: pull.rebase
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: true
 
 - name: "Git | Set rebase.autoStash"
   community.general.git_config:
     name: rebase.autoStash
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: true
 
 - name: "Git | Set user.email"
   community.general.git_config:
     name: user.email
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: "{{ git_user_email }}"
 
 - name: "Git | Set user.name"
   community.general.git_config:
     name: user.name
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: "{{ git_user_name }}"
 
 - name: "Git | Set user.signingkey"
   community.general.git_config:
     name: user.signingkey
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519.pub"
 
 - name: "Git | Set gpg.format"
   community.general.git_config:
     name: gpg.format
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: ssh
 
 - name: "Git | Set commit.gpgsign"
   community.general.git_config:
     name: commit.gpgsign
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: true
 
 - name: "Git | Set tag.gpgsign"
   community.general.git_config:
     name: tag.gpgsign
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: true
 
 # === SSH KEY GENERATION & GITHUB SETUP ===
@@ -317,6 +332,7 @@
 - name: "Git | Set gpg.ssh.allowedSignersFile"
   community.general.git_config:
     name: gpg.ssh.allowedSignersFile
-    scope: global
+    scope: file
+    file: "{{ git_local_config }}"
     value: "{{ ansible_facts['user_dir'] }}/.config/git/allowed_signers"
 

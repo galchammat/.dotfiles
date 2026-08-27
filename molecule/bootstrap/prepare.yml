@@ -1,0 +1,35 @@
+---
+- name: Prepare a credential-free machine
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Install the minimum needed to run the bootstrap script
+      ansible.builtin.raw: |
+        dnf install -y -q git openssh-clients ncurses python3 tar
+      changed_when: false
+
+    - name: Gather facts now that python is available
+      ansible.builtin.setup:
+
+    # Prove the machine really is credential-free, so a passing test cannot be
+    # the result of an inherited key or token.
+    - name: Remove any SSH material
+      ansible.builtin.file:
+        path: "{{ ansible_facts['user_dir'] }}/.ssh"
+        state: absent
+
+    - name: Remove any GitHub CLI credentials
+      ansible.builtin.file:
+        path: "{{ ansible_facts['user_dir'] }}/.config/gh"
+        state: absent
+
+    - name: Assert no SSH key is present
+      ansible.builtin.stat:
+        path: "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519"
+      register: bootstrap_key
+
+    - name: Fail if the machine is not credential-free
+      ansible.builtin.assert:
+        that: not bootstrap_key.stat.exists
+        fail_msg: "Test invalid: an SSH key exists, so the clone would not be tested honestly."
+        success_msg: "Machine is credential-free."

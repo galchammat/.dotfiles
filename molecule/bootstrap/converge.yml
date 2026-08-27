@@ -1,0 +1,38 @@
+---
+- name: Run the real bootstrap script with no credentials
+  hosts: all
+  gather_facts: true
+  vars:
+    repo_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+  tasks:
+    - name: Copy bin/dotfiles into the container
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/bin/dotfiles"
+        dest: /usr/local/bin/dotfiles
+        mode: '0755'
+
+    - name: Run the bootstrap clone
+      ansible.builtin.command:
+        cmd: /usr/local/bin/dotfiles --clone-only
+      environment:
+        # Nothing to fall back on: no agent, and no interactive credential prompt.
+        SSH_AUTH_SOCK: ""
+        GIT_TERMINAL_PROMPT: "0"
+        TERM: xterm
+      register: bootstrap_run
+      changed_when: true
+      failed_when: false
+
+    - name: Show what the bootstrap produced
+      ansible.builtin.debug:
+        msg: "{{ (bootstrap_run.stdout | default('')) ~ (bootstrap_run.stderr | default('')) }}"
+
+    - name: The clone must succeed without any credentials
+      ansible.builtin.assert:
+        that: bootstrap_run.rc == 0
+        fail_msg: >-
+          Bootstrap failed (rc={{ bootstrap_run.rc }}). A "Permission denied (publickey)"
+          here means the repository is being cloned over SSH, which cannot work on a fresh
+          machine: the SSH key is generated and uploaded by the ansible git role, which
+          runs after this clone. Clone over HTTPS instead.
+        success_msg: "Bootstrap cloned the repository with no credentials."

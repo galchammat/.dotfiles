@@ -1,0 +1,197 @@
+---
+- name: Verify the dotfiles are correctly linked and usable
+  hosts: all
+  gather_facts: true
+  vars:
+    ansible_user: tester
+    home: "{{ ansible_facts['user_dir'] }}"
+    repo: "{{ ansible_facts['user_dir'] }}/.dotfiles"
+
+  tasks:
+    # --- symlink correctness -------------------------------------------------
+    - name: Stat a representative file from several packages
+      ansible.builtin.stat:
+        path: "{{ home }}/{{ item.path }}"
+        follow: false
+      register: linked
+      loop:
+        - { pkg: nvim, path: .config/nvim/init.lua }
+        - { pkg: zsh, path: .zshenv }
+        - { pkg: zsh, path: .config/zsh/00-env.zsh }
+        - { pkg: tmux, path: .config/tmux/tmux.conf }
+        - { pkg: git, path: .config/git/config }
+        - { pkg: alacritty, path: .config/alacritty/alacritty.toml }
+        - { pkg: scripts, path: .local/bin/dev }
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Every one is a symlink pointing into its stow package
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.islnk
+          - ('stow/' ~ item.item.pkg ~ '/' ~ item.item.path) in item.stat.lnk_target
+        fail_msg: >-
+          {{ item.item.path }} should be a symlink into stow/{{ item.item.pkg }},
+          but is {{ 'missing' if not item.stat.exists
+                    else ('a real file' if not item.stat.islnk
+                    else 'pointing at ' ~ item.stat.lnk_target) }}
+      loop: "{{ linked.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+
+    - name: Symlinks resolve to readable files
+      ansible.builtin.command:
+        cmd: cat {{ home }}/.config/tmux/tmux.conf
+      register: tmux_conf
+      changed_when: false
+
+    - name: The linked content is the repository content
+      ansible.builtin.assert:
+        that: "'set -g prefix C-a' in tmux_conf.stdout"
+        fail_msg: "tmux.conf does not contain the expected configuration."
+
+    # --- no folding ----------------------------------------------------------
+    # If stow folded, ~/.config itself would be a symlink into the repo and any
+    # program writing there (lazy-lock.json, allowed_signers) would write into
+    # the git working tree.
+    - name: Stat directories that must stay real
+      ansible.builtin.stat:
+        path: "{{ home }}/{{ item }}"
+        follow: false
+      register: dirs
+      loop:
+        - .config
+        - .config/nvim
+        - .config/git
+        - .local/bin
+
+    - name: Assert directories are real, not folded symlinks
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.isdir
+          - not item.stat.islnk
+        fail_msg: >-
+          {{ item.item }} must be a real directory. It is a symlink, so writes
+          into it would land inside the git repository.
+      loop: "{{ dirs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # --- conflict handling ---------------------------------------------------
+    - name: The stock .zshrc was moved aside, not destroyed
+      ansible.builtin.slurp:
+        src: "{{ home }}/.dotfiles-backup/.zshrc"
+      register: backup_zshrc
+
+    - name: Assert the backup preserved the ORIGINAL contents
+      ansible.builtin.assert:
+        that: (backup_zshrc.content | b64decode) is search('ORIGINAL-ZSHRC-MUST-SURVIVE')
+        fail_msg: >-
+          ~/.dotfiles-backup/.zshrc does not contain the original file. Asserting
+          only that the backup exists would not catch a later run overwriting it.
+
+    # --- legacy files that shadow the stowed XDG config ----------------------
+    - name: Legacy files must no longer be in place
+      ansible.builtin.stat:
+        path: "{{ home }}/{{ item }}"
+        follow: false
+      register: legacy_left
+      loop:
+        - .gitconfig
+        - .tmux.conf
+
+    - name: Assert the legacy files were moved out of the way
+      ansible.builtin.assert:
+        that: not item.stat.exists
+        fail_msg: >-
+          ~/{{ item.item }} still exists. git ignores ~/.config/git/config entirely
+          while ~/.gitconfig is present, so the stowed config would be dead weight.
+      loop: "{{ legacy_left.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: And they were preserved in the backup directory
+      ansible.builtin.slurp:
+        src: "{{ home }}/.dotfiles-backup/{{ item }}"
+      register: legacy_backup
+      loop:
+        - .gitconfig
+        - .tmux.conf
+
+    - name: Assert the legacy contents survived
+      ansible.builtin.assert:
+        that: (item.content | b64decode) is search('LEGACY-')
+        fail_msg: "The legacy {{ item.item }} was not preserved in the backup."
+      loop: "{{ legacy_backup.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # --- the role must actually have done its work ---------------------------
+    # Guards against a vacuous pass: if stow were considered unavailable the
+    # linking step would silently skip and every assertion above could still
+    # hold from a previous run.
+    - name: Read the role's own view of the run
+      ansible.builtin.command:
+        cmd: sh -c 'command -v stow'
+      register: stow_present
+      changed_when: false
+
+    - name: Assert stow is genuinely installed and detected
+      ansible.builtin.assert:
+        that: stow_present.rc == 0
+        fail_msg: "stow is not on PATH, so the role cannot have linked anything."
+
+    - name: The dotfiles command is on PATH
+      ansible.builtin.stat:
+        path: "{{ home }}/.local/bin/dotfiles"
+        follow: false
+      register: dotfiles_cmd
+
+    - name: Assert the dotfiles command is linked
+      ansible.builtin.assert:
+        that:
+          - dotfiles_cmd.stat.exists
+          - dotfiles_cmd.stat.islnk
+          - "'bin/dotfiles' in dotfiles_cmd.stat.lnk_target"
+        fail_msg: >-
+          ~/.local/bin/dotfiles should link to the repo's bin/dotfiles, otherwise
+          the documented `dotfiles` command does not resolve.
+
+    - name: And .zshrc is now our symlink
+      ansible.builtin.stat:
+        path: "{{ home }}/.zshrc"
+        follow: false
+      register: home_zshrc
+
+    - name: Assert .zshrc is linked to the repo
+      ansible.builtin.assert:
+        that:
+          - home_zshrc.stat.islnk
+          - "'stow/zsh/.zshrc' in home_zshrc.stat.lnk_target"
+        fail_msg: "~/.zshrc should be a symlink into stow/zsh/"
+
+    # --- writes land outside the repo ---------------------------------------
+    - name: Write a file where neovim keeps its lockfile
+      ansible.builtin.copy:
+        dest: "{{ home }}/.config/nvim/lazy-lock.json"
+        content: "{}\n"
+        mode: '0644'
+
+    - name: The repository must remain clean
+      ansible.builtin.stat:
+        path: "{{ repo }}/stow/nvim/.config/nvim/lazy-lock.json"
+      register: leaked
+
+    - name: Assert nothing leaked into the repo
+      ansible.builtin.assert:
+        that: not leaked.stat.exists
+        fail_msg: >-
+          Writing ~/.config/nvim/lazy-lock.json ended up inside the repository.
+          This is what --no-folding is meant to prevent.
+
+    - name: Remove the probe file
+      ansible.builtin.file:
+        path: "{{ home }}/.config/nvim/lazy-lock.json"
+        state: absent

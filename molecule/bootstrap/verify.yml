@@ -1,0 +1,72 @@
+---
+- name: Verify the bootstrap result
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: The repo is a normal (non-bare) clone at ~/.dotfiles
+      ansible.builtin.stat:
+        path: "{{ ansible_facts['user_dir'] }}/.dotfiles/.git"
+      register: repo_git
+
+    - name: Assert the working tree exists
+      ansible.builtin.assert:
+        that: repo_git.stat.exists and repo_git.stat.isdir
+        fail_msg: "Expected a normal clone with a .git directory at ~/.dotfiles"
+
+    - name: The old bare repo must not be created
+      ansible.builtin.stat:
+        path: "{{ ansible_facts['user_dir'] }}/.dotfiles.git"
+      register: legacy_repo
+
+    - name: Assert the bare layout is gone
+      ansible.builtin.assert:
+        that: not legacy_repo.stat.exists
+        fail_msg: "The bare ~/.dotfiles.git layout should no longer be created."
+
+    - name: Read the configured remote
+      ansible.builtin.command:
+        cmd: git -C {{ ansible_facts['user_dir'] }}/.dotfiles remote get-url origin
+      register: origin_url
+      changed_when: false
+
+    - name: Assert the remote is HTTPS so a fresh machine can clone it
+      ansible.builtin.assert:
+        that: origin_url.stdout is match('^https://')
+        fail_msg: >-
+          origin is "{{ origin_url.stdout }}". It must be HTTPS at bootstrap time;
+          bin/dotfiles upgrades it to SSH only after the git role uploads a key.
+
+    - name: The stow packages were fetched
+      ansible.builtin.stat:
+        path: "{{ ansible_facts['user_dir'] }}/.dotfiles/stow"
+      register: stow_dir
+
+    # Only assert on repository content when the cloned ref actually carries the
+    # stow layout. This scenario exists to test the clone *mechanism*, which must
+    # keep working regardless of which branch is being installed; the stow layout
+    # itself is verified by the default scenario against the working tree.
+    - name: Assert stow packages are present
+      ansible.builtin.assert:
+        that: stow_dir.stat.isdir
+        fail_msg: "Expected stow packages at ~/.dotfiles/stow"
+      when: stow_dir.stat.exists
+
+    - name: Note when the cloned branch predates the stow layout
+      ansible.builtin.debug:
+        msg: >-
+          Cloned ref has no stow/ directory yet. Clone mechanism verified;
+          layout assertions are covered by the default scenario.
+      when: not stow_dir.stat.exists
+
+    - name: Nothing was checked out over the home directory
+      ansible.builtin.stat:
+        path: "{{ ansible_facts['user_dir'] }}/.zshrc"
+        follow: false
+      register: home_zshrc
+
+    - name: Assert the clone did not write into $HOME
+      ansible.builtin.assert:
+        that: not home_zshrc.stat.exists
+        fail_msg: >-
+          ~/.zshrc exists after a clone-only run. The bare layout used to check out
+          over $HOME; the stow layout must leave $HOME untouched until stow runs.

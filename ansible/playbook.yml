@@ -1,14 +1,19 @@
 - name: Setup Linux Workstation
   hosts: local
   vars:
+    # Root of the dotfiles repo, derived from where this playbook lives:
+    # <repo>/ansible/playbook.yml -> <repo>
+    dotfiles_repo_root: "{{ playbook_dir | dirname }}"
+    # Retained for backwards compatibility with anything referencing the old name.
     dot_repo_root: "{{ playbook_dir | dirname }}"
     can_install_packages: true
   roles:
+    # stow runs first: it creates ~/.zshrc and ~/.config/**, which later roles
+    # (nvm, zsh) append to or install alongside.
+    - { role: stow, tags: ["stow", "dotfiles"] }
     - { role: nvm, tags: ["nvm"]}
     - { role: packages, tags: ["packages"] }
     - { role: fonts, tags: ["fonts"] }
     - { role: zsh, tags: ["zsh"]}
     - { role: i3, tags: ["i3"]}
     - { role: git, tags: ["git"]}
-
-

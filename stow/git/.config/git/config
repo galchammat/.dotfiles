@@ -32,3 +32,10 @@
 	keepBackup = false
 [gpg "ssh"]
 	allowedSignersFile = ~/.config/git/allowed_signers
+# Machine-generated settings (identity, signing key) are written here by the
+# ansible git role. Keeping them in a separate, untracked file stops ansible
+# from writing through the symlink into the dotfiles repo, which would leave
+# the working tree permanently dirty and break `git pull --ff-only`.
+# The path is relative to this file's *symlink* location, i.e. ~/.config/git/.
+[include]
+	path = config.local

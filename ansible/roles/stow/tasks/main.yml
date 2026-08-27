@@ -1,0 +1,350 @@
+---
+# Applies the dotfiles in stow/ as symlinks into the user's home directory.
+#
+# This role must run FIRST in the playbook: later roles edit files that this
+# role is responsible for creating (the nvm role appends a managed block to
+# ~/.zshrc, the zsh role installs oh-my-zsh alongside it).
+
+- name: "Stow | Verify the dotfiles repo was located"
+  ansible.builtin.stat:
+    path: "{{ stow_dir }}"
+  register: stow_dir_stat
+
+- name: "Stow | Fail early when the stow directory is missing"
+  ansible.builtin.fail:
+    msg: >-
+      Expected stow packages at {{ stow_dir }} but that path does not exist.
+      dotfiles_repo_root resolved to "{{ dotfiles_repo_root }}".
+  when: not stow_dir_stat.stat.exists
+
+- name: "Stow | Check if stow is already installed"
+  # command -v is a shell builtin. `which` is a separate package that minimal
+  # images (and some containers) do not ship, and its absence would make this
+  # look like stow is missing on every run.
+  ansible.builtin.shell:
+    cmd: command -v stow
+    executable: /bin/sh
+  register: stow_check
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+# Package installation normally belongs in the packages role. stow is the one
+# exception: it has to exist before any dotfile is linked, and the packages
+# role itself runs later in the playbook. stow is also declared in the packages
+# role so it stays visible in the canonical package list.
+- name: "Stow | Install GNU stow (bootstrap dependency)"
+  ansible.builtin.package:
+    name: stow
+    state: present
+  become: true
+  when:
+    - stow_check.rc != 0
+    - can_install_packages | default(false)
+  register: stow_install
+
+- name: "Stow | Fail when stow is unavailable and cannot be installed"
+  ansible.builtin.fail:
+    msg: >-
+      GNU stow is required to link the dotfiles but is not installed and
+      sudo is unavailable. Install it manually (dnf install stow /
+      apt install stow / pacman -S stow / brew install stow) and re-run.
+  when:
+    - stow_check.rc != 0
+    - not (can_install_packages | default(false))
+
+# In check mode the install above is only simulated, so the stow binary may
+# still be missing. Anything that shells out to stow has to know that.
+# Note the install task reports "ok" rather than "changed" when the package is
+# already present, so a successful non-skipped install also means available.
+- name: "Stow | Record whether the stow binary can be invoked"
+  ansible.builtin.set_fact:
+    stow_available: >-
+      {{ stow_check.rc == 0
+         or (stow_install is defined and stow_install is not skipped
+             and stow_install is succeeded and not ansible_check_mode) }}
+
+- name: "Stow | Discover available packages"
+  ansible.builtin.find:
+    paths: "{{ stow_dir }}"
+    file_type: directory
+    recurse: false
+  register: stow_found_packages
+  changed_when: false
+
+- name: "Stow | Select packages to link"
+  ansible.builtin.set_fact:
+    stow_selected_packages: >-
+      {{ stow_found_packages.files
+         | map(attribute='path') | map('basename')
+         | reject('in', stow_exclude)
+         | sort | list }}
+
+- name: "Stow | Fail when no packages were found"
+  ansible.builtin.fail:
+    msg: "No stow packages found under {{ stow_dir }}."
+  when: stow_selected_packages | length == 0
+
+- name: "Stow | Enumerate the home-relative destination of every packaged file"
+  ansible.builtin.command:
+    cmd: >-
+      find {{ stow_selected_packages | map('quote') | join(' ') }}
+      -type f -printf '%P\n'
+    chdir: "{{ stow_dir }}"
+  register: stow_packaged_files
+  changed_when: false
+  check_mode: false
+
+- name: "Stow | Record the destination list"
+  ansible.builtin.set_fact:
+    stow_target_paths: "{{ stow_packaged_files.stdout_lines | select | sort | list }}"
+
+# --- conflict handling -------------------------------------------------------
+# A fresh machine ships real files that collide with a package (/etc/skel gives
+# every new user a .bashrc, and oh-my-zsh writes a .zshrc). stow refuses to
+# overwrite them, so move them aside first. Symlinks are left alone: those are
+# either already ours or will be replaced cleanly by stow.
+#
+# This is one command rather than a stat loop: a per-file loop costs one
+# connection round trip per file, which dominates the runtime of the role.
+
+- name: "Stow | Classify the current state of every destination"
+  ansible.builtin.shell:
+    cmd: |
+      set -u
+
+      # stow silently refuses to link anything matching its built-in ignore
+      # list, so these must not be counted as pending work or the role would
+      # report "changed" forever. The list is stable across stow 2.x; the
+      # README/LICENSE/COPYING entries are anchored to the package root, the
+      # rest match a basename at any depth.
+      stow_ignores() {
+        case ${1##*/} in
+          RCS|CVS|.cvsignore|.svn|_darcs|.hg|.git|.gitignore|.gitmodules) return 0 ;;
+          *,v|.\#*|*~) return 0 ;;
+          \#*\#) return 0 ;;
+        esac
+        case $1 in
+          */*) return 1 ;;
+          README*|LICENSE*|COPYING) return 0 ;;
+        esac
+        return 1
+      }
+
+      for pkg in {{ stow_selected_packages | map('quote') | join(' ') }}; do
+        find "$pkg" -type f -printf '%P\n' | while IFS= read -r rel; do
+          stow_ignores "$rel" && continue
+          src=$PWD/$pkg/$rel
+          target={{ stow_target | quote }}/$rel
+          if [ -L "$target" ]; then
+            if [ "$(readlink -f "$target" || true)" = "$(readlink -f "$src" || true)" ]; then
+              printf 'OK\t%s\n' "$rel"
+            else
+              printf 'RELINK\t%s\n' "$rel"
+            fi
+          elif [ -e "$target" ]; then
+            printf 'CONFLICT\t%s\n' "$rel"
+          else
+            printf 'LINK\t%s\n' "$rel"
+          fi
+        done
+      done
+    chdir: "{{ stow_dir }}"
+    executable: /bin/bash
+  register: stow_scan
+  changed_when: false
+  check_mode: false
+
+- name: "Stow | Split the scan into conflicts and work to do"
+  ansible.builtin.set_fact:
+    stow_conflicting_paths: >-
+      {{ stow_scan.stdout_lines | select('match', 'CONFLICT\t')
+         | map('regex_replace', '^CONFLICT\t', '') | list }}
+    stow_paths_to_link: >-
+      {{ stow_scan.stdout_lines | select('match', '(LINK|RELINK|CONFLICT)\t')
+         | map('regex_replace', '^\w+\t', '') | list }}
+
+- name: "Stow | Report conflicts that will be backed up"
+  ansible.builtin.debug:
+    msg:
+      - "The following existing files collide with a stow package and will be"
+      - "moved to {{ stow_backup_dir }} before linking:"
+      - "{{ stow_conflicting_paths }}"
+  when: stow_conflicting_paths | length > 0
+
+- name: "Stow | Create backup directories for conflicting files"
+  ansible.builtin.file:
+    path: "{{ (stow_backup_dir ~ '/' ~ item) | dirname }}"
+    state: directory
+    mode: '0755'
+  loop: "{{ stow_conflicting_paths + stow_superseded_paths }}"
+  when: not ansible_check_mode
+
+- name: "Stow | Move conflicting files into the backup directory"
+  ansible.builtin.command:
+    # --backup=numbered: a later run must never overwrite an earlier backup,
+    # or the original file it was protecting would be lost for good.
+    cmd: mv --backup=numbered -- "{{ stow_target }}/{{ item }}" "{{ stow_backup_dir }}/{{ item }}"
+    removes: "{{ stow_target }}/{{ item }}"
+  loop: "{{ stow_conflicting_paths }}"
+  when: not ansible_check_mode
+
+# --- legacy files that would shadow a stowed config --------------------------
+
+- name: "Stow | Look for legacy files superseded by a stowed XDG config"
+  ansible.builtin.stat:
+    path: "{{ stow_target }}/{{ item }}"
+    follow: false
+    get_checksum: false
+  register: stow_superseded_stat
+  loop: "{{ stow_superseded_paths }}"
+  changed_when: false
+  check_mode: false
+
+- name: "Stow | Collect legacy files that are really present"
+  ansible.builtin.set_fact:
+    stow_superseded_found: >-
+      {{ stow_superseded_stat.results
+         | selectattr('stat.exists')
+         | rejectattr('stat.islnk')
+         | map(attribute='item') | list }}
+
+- name: "Stow | Report legacy files that will be moved aside"
+  ansible.builtin.debug:
+    msg:
+      - "These files take precedence over their stowed XDG equivalent and will"
+      - "be moved to {{ stow_backup_dir }}:"
+      - "{{ stow_superseded_found }}"
+  when: stow_superseded_found | length > 0
+
+- name: "Stow | Move superseded legacy files aside"
+  ansible.builtin.command:
+    cmd: mv --backup=numbered -- "{{ stow_target }}/{{ item }}" "{{ stow_backup_dir }}/{{ item }}"
+    removes: "{{ stow_target }}/{{ item }}"
+  loop: "{{ stow_superseded_found }}"
+  when: not ansible_check_mode
+
+# --- linking -----------------------------------------------------------------
+# Pending work is derived from the scan above rather than from stow's own
+# --simulate output, for two reasons:
+#   * --restow --simulate always prints UNLINK/LINK "(reverts previous action)"
+#     pairs even when nothing needs doing, so it can never report "no changes"
+#   * --stow --simulate reports the still-present conflicts as fatal in check
+#     mode, because the backup step is skipped there
+# The scan is accurate in both modes, so idempotence and --check both work.
+
+- name: "Stow | Find stale links left by files removed from a package"
+  ansible.builtin.shell:
+    cmd: |
+      set -u
+      # stow writes *relative* symlinks, so matching on the link text with
+      # -lname can never work. Resolve each broken link instead, and only look
+      # inside directories a package actually owns rather than walking all of
+      # the home directory.
+      {
+        printf '%s\n' {{ stow_target | quote }}
+        printf '%s\n' {{ (stow_target_paths | map('dirname') | unique | reject('equalto', '.') | map('regex_replace', '^', stow_target ~ '/') | map('quote') | join(' ')) or "''" }}
+      } | sort -u | while IFS= read -r dir; do
+        [ -d "$dir" ] || continue
+        find "$dir" -maxdepth 1 -xtype l -print 2>/dev/null
+      done | while IFS= read -r link; do
+        case "$(readlink -f "$link" || true)" in
+          {{ stow_dir | quote }}/*) printf '%s\n' "$link" ;;
+        esac
+      done
+    executable: /bin/bash
+  register: stow_stale_links
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: "Stow | Determine whether anything needs linking"
+  ansible.builtin.set_fact:
+    stow_pending_operations: >-
+      {{ (stow_paths_to_link | default([]))
+         + (stow_stale_links.stdout_lines | default([]) | select | list) }}
+
+- name: "Stow | Report what a dry run would do"
+  ansible.builtin.debug:
+    msg:
+      - "Would link {{ stow_pending_operations | length }} path(s)."
+      - "Would back up {{ stow_conflicting_paths | length }} pre-existing file(s)."
+  when: ansible_check_mode
+
+# stow --restow does not remove links whose package file has been deleted, so
+# they would be re-reported as pending on every run. A broken symlink pointing
+# into our own stow directory is unambiguously ours and safe to delete.
+- name: "Stow | Remove stale links whose package file no longer exists"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ stow_stale_links.stdout_lines | default([]) | select | list }}"
+  when: not ansible_check_mode
+
+- name: "Stow | Link packages into {{ stow_target }}"
+  ansible.builtin.command:
+    cmd: >-
+      stow --restow --verbose=1
+      {{ '--no-folding' if stow_no_folding else '' }}
+      --dir {{ stow_dir | quote }}
+      --target {{ stow_target | quote }}
+      {{ stow_selected_packages | map('quote') | join(' ') }}
+  register: stow_apply
+  changed_when: true
+  failed_when: false
+  when:
+    - stow_available
+    - stow_pending_operations | length > 0
+    - not ansible_check_mode
+
+- name: "Stow | Fail when linking did not succeed"
+  ansible.builtin.fail:
+    msg: |-
+      stow could not link every package:
+
+      {{ stow_apply.stderr }}
+  when:
+    - stow_apply is not skipped
+    - stow_apply.rc | default(0) != 0
+
+- name: "Stow | Ensure ~/.local/bin exists"
+  ansible.builtin.file:
+    path: "{{ stow_command_link | dirname }}"
+    state: directory
+    mode: '0755'
+
+# bin/ is not a stow package, so nothing else puts the dotfiles command on PATH.
+- name: "Stow | Link the dotfiles command onto PATH"
+  ansible.builtin.file:
+    src: "{{ dotfiles_repo_root }}/bin/dotfiles"
+    dest: "{{ stow_command_link }}"
+    state: link
+    force: true
+
+- name: "Stow | Warn about a stale copy of the dotfiles command"
+  ansible.builtin.stat:
+    path: "{{ stow_target }}/bin/dotfiles"
+    follow: false
+  register: stow_legacy_command
+
+- name: "Stow | Report the stale command copy"
+  ansible.builtin.debug:
+    msg:
+      - "⚠️  An old copy of the dotfiles command is still at ~/bin/dotfiles."
+      - "It predates this layout and would re-check-out the old bare repo."
+      - "Remove it with: rm ~/bin/dotfiles"
+  when: stow_legacy_command.stat.exists
+
+- name: "Stow | Report status"
+  ansible.builtin.debug:
+    msg:
+      - "Stow status:"
+      - "- Repo root: {{ dotfiles_repo_root }}"
+      - "- Target: {{ stow_target }}"
+      - "- Packages linked ({{ stow_selected_packages | length }}): {{ stow_selected_packages | join(', ') }}"
+      - "- Excluded: {{ stow_exclude | join(', ') if stow_exclude | length > 0 else 'none' }}"
+      - "- Files linked: {{ stow_target_paths | length }}"
+      - "- Conflicts backed up: {{ stow_conflicting_paths | length }}"
+      - "- Pending operations: {{ stow_pending_operations | length }}"
+

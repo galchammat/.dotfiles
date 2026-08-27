@@ -1,0 +1,38 @@
+---
+# Full playbook run on a clean Fedora machine.
+#
+# Verifies that the stow role links every package into the home directory, that
+# a second run reports no changes, and that neovim starts headlessly with all
+# plugins installed and no errors.
+driver:
+  name: podman
+
+platforms:
+  - name: dotfiles-fedora
+    image: quay.io/fedora/fedora:41
+    pre_build_image: true
+    command: /bin/sleep infinity
+
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: prepare.yml
+    converge: converge.yml
+    verify: verify.yml
+  env:
+    ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/ansible/roles"
+  config_options:
+    defaults:
+      stdout_callback: ansible.builtin.default
+      result_format: yaml
+      display_skipped_hosts: false
+
+scenario:
+  test_sequence:
+    - destroy
+    - create
+    - prepare
+    - converge
+    - idempotence
+    - verify
+    - destroy

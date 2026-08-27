@@ -1,0 +1,42 @@
+---
+# Regression test for the bootstrap clone.
+#
+# The clone in bin/dotfiles happens in bash *before* ansible is ever invoked,
+# so the "default" scenario - which runs the playbook directly - can never
+# exercise it. This scenario runs the real script inside a container that has
+# no SSH key, no ssh-agent and no GitHub token, which is the exact state of a
+# factory-fresh machine.
+#
+# Cloning over SSH here fails with "Permission denied (publickey)", because the
+# SSH key is only created and uploaded to GitHub later, by the ansible git role.
+driver:
+  name: podman
+
+platforms:
+  - name: dotfiles-bootstrap-fedora
+    image: quay.io/fedora/fedora:41
+    pre_build_image: true
+    command: /bin/sleep infinity
+
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: prepare.yml
+    converge: converge.yml
+    verify: verify.yml
+  config_options:
+    defaults:
+      stdout_callback: ansible.builtin.default
+      result_format: yaml
+      display_skipped_hosts: false
+
+scenario:
+  # No idempotence check: this scenario asserts a one-shot bootstrap, and
+  # idempotence of the playbook itself is covered by the default scenario.
+  test_sequence:
+    - destroy
+    - create
+    - prepare
+    - converge
+    - verify
+    - destroy

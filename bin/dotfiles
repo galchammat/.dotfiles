@@ -86,6 +86,12 @@ for arg in "$@"; do
     --version)
       SHOW_VERSION=true
       ;;
+    --clone-only)
+      # Fetch/update the repository and exit without installing packages or
+      # running ansible. Used by the molecule bootstrap scenario to regression
+      # test the clone on a machine that has no credentials of any kind.
+      CLONE_ONLY=true
+      ;;
   esac
 done
 
@@ -105,10 +111,24 @@ trap cleanup EXIT INT TERM
 
 # Paths
 DOTFILES_LOG="${TMPDIR:-/tmp}/.dotfiles.log.$$"
-DOTFILES_GIT="$HOME/.dotfiles.git"
-DOTFILES_DIR="$HOME"
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+DOTFILES_ANSIBLE="$DOTFILES_DIR/ansible"
 IS_FIRST_RUN="$HOME/.dotfiles_run"
-DOTFILES_VERSION="1.0.0"
+DOTFILES_VERSION="2.0.0"
+
+# The repository is cloned over HTTPS. It is public, so this works on a
+# factory-fresh machine with no credentials at all. Cloning over SSH cannot
+# work here: the SSH key is generated and uploaded to GitHub by the ansible
+# git role, which necessarily runs *after* this clone. Once that role has run,
+# the remote is upgraded to SSH so pushes are authenticated.
+DOTFILES_REPO_HTTPS="https://github.com/galchammat/.dotfiles.git"
+DOTFILES_REPO_SSH="git@github.com:galchammat/.dotfiles.git"
+# Branch to install from. Override to bootstrap from a feature branch:
+#   DOTFILES_BRANCH=feat/stow-migration bash -c "$(curl -fsSL .../bin/dotfiles)"
+DOTFILES_BRANCH="${DOTFILES_BRANCH:-main}"
+
+# Pre-stow layout: a bare repo checked out directly over $HOME.
+DOTFILES_LEGACY_GIT="$HOME/.dotfiles.git"
 # Spinner PID tracking
 SPINNER_PID=""
 
@@ -124,6 +144,7 @@ show_help() {
   echo -e "    ${CAT_GREEN}--version${NC}               Show version information"
   echo -e "    ${CAT_GREEN}--uninstall <role>${NC}      Uninstall a role (cleanup only)"
   echo -e "    ${CAT_GREEN}--delete <role>${NC}         Uninstall and delete a role from dotfiles"
+  echo -e "    ${CAT_GREEN}--clone-only${NC}            Clone/update the repo only, skip packages and ansible"
   echo -e "    ${CAT_GREEN}-v, -vv, -vvv${NC}           Verbose mode (passed to ansible-playbook)"
   echo ""
   echo -e "${CAT_BLUE}EXAMPLES:${NC}"
@@ -402,40 +423,59 @@ fi
 print_banner
 
 dotfiles_os=$(detect_os)
-__task "Loading Setup for detected OS: $dotfiles_os"
-case $dotfiles_os in
-  ubuntu)
-    ubuntu_setup
-    ;;
-  pop)
-    ubuntu_setup
-    ;;
-  arch)
-    arch_setup
-    ;;
-  fedora)
-    fedora_setup
-    ;;
-  darwin)
-    macos_setup
-    ;;
-  *)
-    __task "Unsupported OS"
-    _cmd "echo 'Unsupported OS'"
-    ;;
-esac
+if [[ "${CLONE_ONLY:-}" != "true" ]]; then
+  __task "Loading Setup for detected OS: $dotfiles_os"
+  case $dotfiles_os in
+    ubuntu)
+      ubuntu_setup
+      ;;
+    pop)
+      ubuntu_setup
+      ;;
+    arch)
+      arch_setup
+      ;;
+    fedora)
+      fedora_setup
+      ;;
+    darwin)
+      macos_setup
+      ;;
+    *)
+      __task "Unsupported OS"
+      _cmd "echo 'Unsupported OS'"
+      ;;
+  esac
+fi
 
-if ! [[ -d "$DOTFILES_GIT" ]]; then
+if ! [[ -d "$DOTFILES_DIR/.git" ]]; then
   __task "Downloading dotfiles repository (This may take a minute)"
-  _cmd "git clone --bare --quiet git@github.com:galchammat/.dotfiles.git $DOTFILES_GIT"
-  __task "Checking out dotfiles to home directory"
-  _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME checkout -f"
-  _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME config --local status.showUntrackedFiles no"
+  _cmd "git clone --quiet --branch '$DOTFILES_BRANCH' '$DOTFILES_REPO_HTTPS' '$DOTFILES_DIR'"
   _task_done
 else
   __task "Updating dotfiles repository"
-  _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME pull --quiet"
+  _cmd "git -C '$DOTFILES_DIR' pull --quiet --ff-only"
   _task_done
+fi
+
+if [[ "${CLONE_ONLY:-}" == "true" ]]; then
+  echo -e "${CHECK_MARK} ${CAT_GREEN}Repository ready at ${DOTFILES_DIR}${NC}"
+  exit 0
+fi
+
+# Warn about the pre-stow bare repository. It is inert once this script stops
+# invoking it, but leaving it in place is confusing and it still holds the
+# only copy of any commits that were never pushed.
+if [[ -d "$DOTFILES_LEGACY_GIT" ]]; then
+  echo -e "${WARNING} ${CAT_YELLOW}Found the old bare dotfiles repo at ${BOLD}${DOTFILES_LEGACY_GIT}${NC}"
+  echo -e "      ${CAT_SUBTEXT1}The dotfiles now live at ${DOTFILES_DIR} and are linked with stow.${NC}"
+  echo -e "      ${CAT_SUBTEXT1}Any real files it left in \$HOME are backed up to ~/.dotfiles-backup${NC}"
+  echo -e "      ${CAT_SUBTEXT1}before they are replaced by symlinks.${NC}"
+  echo ""
+  echo -e "      ${CAT_SUBTEXT1}Check for unpushed work, then remove it:${NC}"
+  echo -e "      ${CAT_TEAL}git --git-dir=$DOTFILES_LEGACY_GIT --work-tree=\$HOME log --branches --not --remotes${NC}"
+  echo -e "      ${CAT_TEAL}rm -rf $DOTFILES_LEGACY_GIT${NC}"
+  echo ""
 fi
 
 # Parse arguments for uninstall/delete
@@ -479,7 +519,7 @@ done
 # Common function to run uninstall script
 run_uninstall_script() {
   local role="$1"
-  local role_dir="$HOME/ansible/roles/$role"
+  local role_dir="$DOTFILES_ANSIBLE/roles/$role"
   local uninstall_script="$role_dir/uninstall.sh"
 
   if [[ ! -d "$role_dir" ]]; then
@@ -520,25 +560,22 @@ if [[ -n "$UNINSTALL_ROLE" ]]; then
     if run_uninstall_script "$UNINSTALL_ROLE"; then
       echo -e "${GREEN} [✓]  ${CAT_TEXT}${UNINSTALL_ROLE} has been uninstalled${NC}"
     else
-      popd 2>&1 > /dev/null
       exit 1
     fi
   else
     echo -e "${YELLOW} [!]  ${CAT_TEXT}Uninstall cancelled${NC}"
   fi
-  popd 2>&1 > /dev/null
   exit 0
 fi
 
 # Handle delete (uninstall + remove role)
 if [[ -n "$DELETE_ROLE" ]]; then
-  ROLE_DIR="$DOTFILES_DIR/roles/$DELETE_ROLE"
+  ROLE_DIR="$DOTFILES_ANSIBLE/roles/$DELETE_ROLE"
   UNINSTALL_SCRIPT="$ROLE_DIR/uninstall.sh"
 
   # Check if role exists
   if [[ ! -d "$ROLE_DIR" ]]; then
     echo -e "${RED} [✗]  ${CAT_TEXT}Error: Role '${DELETE_ROLE}' not found${NC}"
-    popd 2>&1 > /dev/null
     exit 1
   fi
 
@@ -561,14 +598,14 @@ if [[ -n "$DELETE_ROLE" ]]; then
     fi
 
     # Remove from group_vars/all.yml (with backup)
-    if grep -q "^  - $DELETE_ROLE$" "$DOTFILES_DIR/group_vars/all.yml"; then
+    if grep -q "^  - $DELETE_ROLE$" "$DOTFILES_ANSIBLE/group_vars/all.yml"; then
       __task "Removing $DELETE_ROLE from configuration"
-      cp "$DOTFILES_DIR/group_vars/all.yml" "$DOTFILES_DIR/group_vars/all.yml.bak"
+      cp "$DOTFILES_ANSIBLE/group_vars/all.yml" "$DOTFILES_ANSIBLE/group_vars/all.yml.bak"
       # Use portable sed -i syntax (macOS requires '', Linux doesn't)
       if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i '' "/^  - $DELETE_ROLE$/d" "$DOTFILES_DIR/group_vars/all.yml"
+        sed -i '' "/^  - $DELETE_ROLE$/d" "$DOTFILES_ANSIBLE/group_vars/all.yml"
       else
-        sed -i "/^  - $DELETE_ROLE$/d" "$DOTFILES_DIR/group_vars/all.yml"
+        sed -i "/^  - $DELETE_ROLE$/d" "$DOTFILES_ANSIBLE/group_vars/all.yml"
       fi
       _task_done
     fi
@@ -590,10 +627,22 @@ if [[ -n "$DELETE_ROLE" ]]; then
 fi
 
 _task_done
-ansible-playbook "$HOME/ansible/playbook.yml" \
-  -i "$HOME/ansible/hosts" \
+ansible-playbook "$DOTFILES_ANSIBLE/playbook.yml" \
+  -i "$DOTFILES_ANSIBLE/hosts" \
   --ask-become-pass \
   "${REMAINING_ARGS[@]}"
+
+# The git role has now generated an SSH key and uploaded it to GitHub, so the
+# remote can be upgraded from HTTPS to SSH for authenticated pushes.
+if git -C "$DOTFILES_DIR" remote get-url origin 2>/dev/null | grep -q '^https://'; then
+  # ssh -T against GitHub exits non-zero even on success, so match the banner.
+  if ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 \
+      | grep -q 'successfully authenticated'; then
+    __task "Switching dotfiles remote to SSH"
+    _cmd "git -C '$DOTFILES_DIR' remote set-url origin '$DOTFILES_REPO_SSH'"
+    _task_done
+  fi
+fi
 
 if ! [[ -f "$IS_FIRST_RUN" ]]; then
   echo ""

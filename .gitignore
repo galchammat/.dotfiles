@@ -1,0 +1,12 @@
+# Python virtualenv used to run molecule locally
+.venv/
+
+# Molecule scratch state
+.molecule/
+
+# Files a tool writes next to a stowed config. They are machine-specific and
+# must never be committed.
+stow/nvim/.config/nvim/lazy-lock.json
+stow/gh/.config/gh/hosts.yml
+stow/git/.config/git/allowed_signers
+stow/git/.config/git/config.local
