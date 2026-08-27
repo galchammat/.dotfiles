@@ -102,6 +102,24 @@ generated settings go to files that are not part of any package:
 `~/.config` and its subdirectories are real directories (`--no-folding`), so
 creating a new file in them does not touch the repository.
 
+## Neovim
+
+Neovim is installed from the official prebuilt release rather than built from
+source, which took 10-20 minutes and required a full toolchain. The tarball is
+extracted to `/opt/nvim` (arch-independent, so the same `PATH` entry works on
+x86_64 and arm64) and linked to `/usr/local/bin/nvim`.
+
+The version is pinned in `ansible/roles/packages/defaults/main.yml`:
+
+```yaml
+neovim_version: "v0.12.5"
+```
+
+Change it and re-run `dotfiles -t packages` to upgrade or downgrade; the role
+compares `nvim --version` against the pin and only downloads when they differ.
+A machine still carrying the old source-built binary at `/usr/local/bin/nvim`
+has it replaced by the symlink automatically.
+
 ## Testing
 
 Two molecule scenarios run against Fedora containers under podman:

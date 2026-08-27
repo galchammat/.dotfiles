@@ -1,0 +1,15 @@
+---
+# Neovim is installed from the official prebuilt release rather than built from
+# source: the source build takes 10-20 minutes and pulls in a full toolchain,
+# while the release tarball is ~11MB and installs in seconds.
+#
+# Pinned rather than tracking "stable" so an upstream release cannot silently
+# change the editor underneath a rebuild. Bump deliberately.
+neovim_version: "v0.12.5"
+
+# Arch-independent install prefix, so the PATH entry in .config/zsh/00-env.zsh
+# is the same on x86_64 and arm64.
+neovim_prefix: /opt/nvim
+
+# Upstream publishes nvim-linux-x86_64.tar.gz and nvim-linux-arm64.tar.gz.
+neovim_asset: "nvim-linux-{{ 'arm64' if ansible_facts['architecture'] == 'aarch64' else 'x86_64' }}"

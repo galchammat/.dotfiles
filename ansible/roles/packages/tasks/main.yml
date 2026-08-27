@@ -133,82 +133,66 @@
   become: yes
   when: ansible_facts['os_family'] == 'Debian'
 
-# BUILD NEOVIM FROM SOURCE
-- name: "Packages | Check if Neovim is already installed"
-  ansible.builtin.command: which nvim
-  register: nvim_check
+# INSTALL NEOVIM (official prebuilt release)
+# Building from source took 10-20 minutes and needed a full toolchain. The
+# published tarball is ~11MB and extracts in seconds.
+- name: "Packages | Check the installed Neovim version"
+  ansible.builtin.command: "{{ neovim_prefix }}/bin/nvim --version"
+  register: nvim_version_check
   changed_when: false
   failed_when: false
-  no_log: true
+  check_mode: false
 
-- name: "Packages | Install Neovim build dependencies (Debian)"
-  ansible.builtin.apt:
-    name:
-      - ninja-build
-      - gettext
-      - cmake
-      - unzip
-      - curl
-      - build-essential
-    state: present
-  become: yes
-  when:
-    - nvim_check.rc != 0
-    - ansible_facts['os_family'] == 'Debian'
+- name: "Packages | Decide whether Neovim needs installing"
+  ansible.builtin.set_fact:
+    # `nvim --version` starts with e.g. "NVIM v0.12.5". Compared exactly rather
+    # than by regex, since the version string contains dots.
+    neovim_needs_install: >-
+      {{ nvim_version_check.rc != 0
+         or (nvim_version_check.stdout_lines | first | default('') | trim)
+            != ('NVIM ' ~ neovim_version) }}
 
-- name: "Packages | Install Neovim build dependencies (Fedora)"
-  ansible.builtin.dnf:
-    name:
-      - ninja-build
-      - gettext
-      - cmake
-      - unzip
-      - curl
-      - gcc
-      - gcc-c++
-      - make
-    state: present
-  become: yes
+- name: "Packages | Create the Neovim prefix"
+  ansible.builtin.file:
+    path: "{{ neovim_prefix }}"
+    state: directory
+    mode: '0755'
+  become: true
   when:
-    - nvim_check.rc != 0
-    - ansible_facts['os_family'] == 'RedHat'
-
-- name: "Packages | Clone Neovim repository"
-  git:
-    repo: 'https://github.com/neovim/neovim.git'
-    dest: '/tmp/neovim'
-    version: stable
-    depth: 1
-  when:
-    - nvim_check.rc != 0
+    - neovim_needs_install
     - not ansible_check_mode
 
-- name: "Packages | Build Neovim"
-  shell: |
-    cd /tmp/neovim
-    make CMAKE_BUILD_TYPE=RelWithDebInfo
-  args:
-    creates: /tmp/neovim/build/bin/nvim
+- name: "Packages | Install Neovim {{ neovim_version }} from the official release"
+  ansible.builtin.unarchive:
+    src: "https://github.com/neovim/neovim/releases/download/{{ neovim_version }}/{{ neovim_asset }}.tar.gz"
+    dest: "{{ neovim_prefix }}"
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
+    owner: root
+    group: root
+  become: true
   when:
-    - nvim_check.rc != 0
+    - neovim_needs_install
     - not ansible_check_mode
 
-- name: "Packages | Install Neovim"
-  shell: |
-    cd /tmp/neovim
-    make install
-  become: yes
-  args:
-    creates: /usr/local/bin/nvim
-  when:
-    - nvim_check.rc != 0
-    - not ansible_check_mode
+# nvim resolves its runtime files relative to the real path of the binary, so
+# linking it onto PATH from the prefix keeps share/nvim discoverable. force is
+# needed to replace a binary left behind by the old source build.
+- name: "Packages | Link Neovim onto PATH"
+  ansible.builtin.file:
+    src: "{{ neovim_prefix }}/bin/nvim"
+    dest: /usr/local/bin/nvim
+    state: link
+    force: true
+  become: true
 
-- name: "Packages | Clean up Neovim source"
-  file:
-    path: /tmp/neovim
-    state: absent
-  when: not ansible_check_mode
+- name: "Packages | Report the Neovim install"
+  ansible.builtin.debug:
+    msg:
+      - "Neovim {{ neovim_version }} ({{ neovim_asset }})"
+      - "- Prefix: {{ neovim_prefix }}"
+      - "- Was already current: {{ 'no' if neovim_needs_install else 'yes' }}"
 
 # INSTALL OPENCODE
 - name: "Packages | Check if OpenCode is already installed"
