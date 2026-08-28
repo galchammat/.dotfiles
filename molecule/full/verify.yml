@@ -86,7 +86,7 @@
       register: cmd_check
       changed_when: false
       failed_when: false
-      loop: [nvim, tmux, zsh, git, gh, stow, rg, unzip, curl, node]
+      loop: [nvim, tmux, zsh, git, gh, stow, rg, unzip, curl]
 
     - name: Assert every required command is installed
       ansible.builtin.assert:
@@ -95,6 +95,28 @@
       loop: "{{ cmd_check.results }}"
       loop_control:
         label: "{{ item.item }}"
+
+    # node is deliberately not in the list above. nvm puts it on PATH by
+    # sourcing nvm.sh from the shell config, so it is absent from a non-login
+    # shell by design. Checking it any other way would test nvm's internals
+    # rather than whether the shell config actually works.
+    - name: Node is available through the shell config
+      ansible.builtin.command:
+        cmd: zsh -l -i -c 'command -v node && node --version'
+      register: node_check
+      changed_when: false
+      failed_when: false
+      environment:
+        HOME: "{{ home }}"
+
+    - name: Assert nvm's node is reachable from a login shell
+      ansible.builtin.assert:
+        that:
+          - node_check.rc == 0
+          - node_check.stdout is search('.nvm/versions/node')
+        fail_msg: >-
+          node is not on PATH in a login shell, so the nvm setup did not take:
+          {{ node_check.stdout }}{{ node_check.stderr }}
 
     - name: Assert neovim is the pinned prebuilt release
       ansible.builtin.command:

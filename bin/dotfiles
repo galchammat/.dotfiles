@@ -70,11 +70,12 @@ RIGHT_ANGLE="${GREEN}\xE2\x88\x9F${NC}"
 
 set -e
 
-# Check for tput (required for cursor control)
+# tput drives the spinner and cursor control. It comes from ncurses, which a
+# minimal install may not ship. It is purely cosmetic, so rather than refusing
+# to run, fall back to a no-op and carry on: an installer should not die over
+# progress animation. The OS setup below installs ncurses where it can.
 if ! command -v tput &> /dev/null; then
-  echo -e "${CAT_RED}Error: 'tput' is required but not found.${NC}"
-  echo -e "${CAT_SUBTEXT1}Please install ncurses (Ubuntu: apt install ncurses-bin, Arch: pacman -S ncurses)${NC}"
-  exit 1
+  tput() { :; }
 fi
 
 # Early check for help/version flags (before setup)
@@ -286,6 +287,21 @@ ubuntu_setup() {
     source /etc/os-release
   fi
 
+  # ncurses-bin provides tput, needed by the spinner before ansible runs.
+  if ! [ -x "$(command -v tput)" ]; then
+    _cmd "sudo apt update"
+    _cmd "sudo apt install -y ncurses-bin"
+    unset -f tput 2>/dev/null || true
+  fi
+
+  # git is needed to clone this repo a few lines below, so it cannot wait for
+  # the packages role.
+  if ! [ -x "$(command -v git)" ]; then
+    __task "Installing Git"
+    _cmd "sudo apt update"
+    _cmd "sudo apt install -y git"
+  fi
+
   if ! dpkg -s ansible >/dev/null 2>&1; then
     __task "Installing Ansible (This may take a few minutes)"
     _cmd "sudo apt update"
@@ -312,6 +328,19 @@ ubuntu_setup() {
 }
 
 arch_setup() {
+  # ncurses provides tput, needed by the spinner before ansible runs.
+  if ! [ -x "$(command -v tput)" ]; then
+    _cmd "sudo pacman -Sy --noconfirm"
+    _cmd "sudo pacman -S --noconfirm ncurses"
+    unset -f tput 2>/dev/null || true
+  fi
+  # git is needed to clone this repo a few lines below, so it cannot wait for
+  # the packages role.
+  if ! [ -x "$(command -v git)" ]; then
+    __task "Installing Git"
+    _cmd "sudo pacman -Sy --noconfirm"
+    _cmd "sudo pacman -S --noconfirm git"
+  fi
   if ! [ -x "$(command -v ansible)" ]; then
     __task "Installing Ansible (This may take a few minutes)"
     _cmd "sudo pacman -Sy --noconfirm"
@@ -342,6 +371,18 @@ arch_setup() {
 }
 
 fedora_setup() {
+  # ncurses provides tput, which the spinner uses. Installed here rather than in
+  # the packages role because the script needs it before ansible ever runs.
+  if ! [ -x "$(command -v tput)" ]; then
+    _cmd "sudo dnf install -y ncurses"
+    unset -f tput 2>/dev/null || true
+  fi
+  # git is needed to clone this repo a few lines below, so it cannot wait for
+  # the packages role.
+  if ! [ -x "$(command -v git)" ]; then
+    __task "Installing Git"
+    _cmd "sudo dnf install -y git"
+  fi
   if ! [ -x "$(command -v ansible)" ]; then
     __task "Installing Ansible (This may take a few minutes)"
     _cmd "sudo dnf install -y ansible"
