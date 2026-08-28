@@ -183,12 +183,22 @@
     path: "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519"
   register: ssh_private_key_stat
 
-- name: "Git | Generate SSH key (INTERACTIVE - will prompt for passphrase)"
-  ansible.builtin.command: >
-    ssh-keygen -t ed25519 
-    -C "{{ git_user_email }}" 
-    -f "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519"
-  when: 
+- name: "Git | Generate SSH key"
+  # -N '' generates without a passphrase so the run stays unattended. The old
+  # form prompted, which stalled the whole playbook. Add one later if wanted:
+  #   ssh-keygen -p -f ~/.ssh/id_ed25519
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -t
+      - ed25519
+      - -N
+      - ""
+      - -C
+      - "{{ git_user_email }}"
+      - -f
+      - "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519"
+  when:
     - not ssh_private_key_stat.stat.exists
     - not ansible_check_mode
   register: ssh_key_generated
@@ -257,35 +267,53 @@
   no_log: true
   when: gh_check.rc == 0
 
-- name: "Git | Authenticate with GitHub (INTERACTIVE - opens browser)"
-  ansible.builtin.command: gh auth login --git-protocol ssh --web
-  when: 
-    - gh_check.rc == 0
-    - gh_auth_status.rc != 0
-    - not ansible_check_mode
-  register: gh_auth_result
+# `gh auth login --web` prints a one-time code and blocks until the user
+# approves it in a browser. Running it here stalled the playbook indefinitely on
+# any headless or unattended run, which is exactly what ansible/CLAUDE.md says
+# not to do. It is deferred to the finish-setup commands printed at the end.
 
 - name: "Git | Upload SSH key to GitHub"
   ansible.builtin.command: >
-    gh ssh-key add "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519.pub" 
+    gh ssh-key add "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519.pub"
     --title "{{ ansible_facts['hostname'] }}-{{ machine_id_short }}"
-  when: 
+  when:
     - gh_check.rc == 0
-    - (gh_auth_result is changed or (gh_auth_status.rc == 0 and ssh_key_generated is changed))
+    - gh_auth_status.rc | default(1) == 0
+    - ssh_key_generated is changed
     - not ansible_check_mode
   register: gh_ssh_upload
   failed_when: false
 
+- name: "Git | Collect the setup steps that still need a human"
+  ansible.builtin.set_fact:
+    git_manual_steps: >-
+      {{ ([] if (gh_check.rc == 0 and gh_auth_status.rc | default(1) == 0)
+          else ['gh auth login --git-protocol ssh --web'])
+         + ([] if (gh_check.rc == 0
+                   and gh_auth_status.rc | default(1) == 0
+                   and gh_ssh_upload is not skipped)
+            else ['gh ssh-key add ~/.ssh/id_ed25519.pub --title "'
+                  ~ ansible_facts['hostname'] ~ '-' ~ machine_id_short ~ '"']) }}
+
+# bin/dotfiles prints this after the playbook finishes, so the remaining steps
+# are the last thing on screen rather than scrolled off in the ansible output.
+- name: "Git | Record the finish-setup commands"
+  ansible.builtin.copy:
+    dest: "{{ ansible_facts['user_dir'] }}/.dotfiles-next-steps"
+    mode: '0644'
+    content: |
+      {% for step in git_manual_steps %}
+      {{ step }}
+      {% endfor %}
+  when: not ansible_check_mode
+
 - name: "Git | GitHub setup status"
   ansible.builtin.debug:
     msg:
-      - "GitHub setup complete:"
+      - "GitHub setup:"
       - "- SSH key: {{ ansible_facts['user_dir'] }}/.ssh/id_ed25519.pub"
-      - "- Key uploaded to GitHub as: {{ ansible_facts['hostname'] }}-{{ machine_id_short }}"
-      - "- Authentication: ✓"
-  when: 
-    - gh_check.rc == 0
-    - (gh_auth_result is changed or gh_auth_status.rc == 0)
+      - "- Authenticated: {{ '✓' if (gh_check.rc == 0 and gh_auth_status.rc | default(1) == 0) else '✗ (see finish-setup commands)' }}"
+      - "- Steps still needed: {{ git_manual_steps | length }}"
 
 - name: "Git | Ensure ~/.config/git/allowed_signers exists"
   ansible.builtin.file:

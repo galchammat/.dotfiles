@@ -1,0 +1,50 @@
+---
+- name: Prepare a factory-fresh Fedora machine
+  hosts: all
+  gather_facts: false
+  tasks:
+    # Deliberately minimal: bin/dotfiles is supposed to install everything else
+    # itself, including ansible. Only sudo and a user are seeded, because the
+    # script assumes it is not running as root.
+    - name: Install the bare minimum a new machine would already have
+      ansible.builtin.raw: |
+        dnf install -y -q sudo shadow-utils python3 >/dev/null 2>&1
+      changed_when: false
+
+    - name: Gather facts now that python is available
+      ansible.builtin.setup:
+
+    - name: Create the workstation user
+      ansible.builtin.user:
+        name: tester
+        shell: /bin/bash
+        create_home: true
+
+    - name: Grant passwordless sudo
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/tester
+        content: "tester ALL=(ALL) NOPASSWD: ALL\n"
+        mode: '0440'
+        validate: /usr/sbin/visudo -csf %s
+
+    # A real Fedora user gets this from /etc/skel and it collides with the zsh
+    # package, so the run has to survive it.
+    - name: Seed a stock .zshrc the way /etc/skel would
+      ansible.builtin.copy:
+        dest: /home/tester/.zshrc
+        content: "ORIGINAL-ZSHRC-MUST-SURVIVE\n"
+        owner: tester
+        group: tester
+        mode: '0644'
+
+    - name: Confirm the machine starts with nothing installed
+      ansible.builtin.command:
+        cmd: sh -c 'command -v ansible nvim stow tmux'
+      register: preinstalled
+      changed_when: false
+      failed_when: false
+
+    - name: Assert a genuinely factory-fresh starting point
+      ansible.builtin.assert:
+        that: preinstalled.rc != 0
+        fail_msg: "Base image already provides: {{ preinstalled.stdout }}"

@@ -1,0 +1,60 @@
+---
+- name: Run the real bootstrap script end to end
+  hosts: all
+  gather_facts: true
+  vars:
+    ansible_user: tester
+    repo_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    # The script clones the repo itself, so the roles under test come from this
+    # branch on the remote. Override with -e dotfiles_test_branch=... to check
+    # a different ref.
+    dotfiles_test_branch: >-
+      {{ lookup('pipe', 'git -C ' ~ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') ~ ' branch --show-current') }}
+
+  tasks:
+    # The local copy is used rather than curling it, so changes to the script
+    # are tested before they are pushed. Everything it then clones comes from
+    # the remote branch.
+    - name: Install the bootstrap script the way the curl one-liner would
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/bin/dotfiles"
+        dest: /tmp/dotfiles
+        mode: '0755'
+
+    - name: Report which branch is under test
+      ansible.builtin.debug:
+        msg: "Installing from branch: {{ dotfiles_test_branch }}"
+
+    # No --skip-tags: the git role used to block on `gh auth login --web`, so a
+    # full unattended run was impossible. It now defers anything needing a
+    # human to the finish-setup commands, so the whole playbook must complete
+    # on its own. That is the property this scenario exists to protect.
+    #
+    # The empty line on stdin answers --ask-become-pass, which the script always
+    # passes. sudo is NOPASSWD here, so the value is irrelevant. If any task
+    # still tried to prompt, it would read EOF and fail rather than hang.
+    - name: Run the full install
+      ansible.builtin.shell:
+        cmd: printf '\n' | /tmp/dotfiles
+      environment:
+        DOTFILES_BRANCH: "{{ dotfiles_test_branch }}"
+        TERM: xterm
+      register: install_run
+      changed_when: true
+      failed_when: false
+      timeout: 2400
+
+    - name: Show the tail of the install output
+      ansible.builtin.debug:
+        msg: "{{ (install_run.stdout_lines | default([]))[-40:] }}"
+
+    - name: Show stderr if the install failed
+      ansible.builtin.debug:
+        msg: "{{ (install_run.stderr_lines | default([]))[-40:] }}"
+      when: install_run.rc != 0
+
+    - name: The install must complete without error
+      ansible.builtin.assert:
+        that: install_run.rc == 0
+        fail_msg: "bin/dotfiles exited {{ install_run.rc }}."
+        success_msg: "bin/dotfiles completed."

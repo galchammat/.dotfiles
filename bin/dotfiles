@@ -632,6 +632,23 @@ ansible-playbook "$DOTFILES_ANSIBLE/playbook.yml" \
   --ask-become-pass \
   "${REMAINING_ARGS[@]}"
 
+# Steps that need a human are collected by the roles rather than run inline, so
+# the playbook never blocks. Print them last, where they will not scroll away.
+NEXT_STEPS="$HOME/.dotfiles-next-steps"
+if [[ -s "$NEXT_STEPS" ]]; then
+  echo ""
+  echo -e "${BOOK} ${CAT_YELLOW}Finish setup by running:${NC}"
+  echo ""
+  while IFS= read -r step; do
+    [[ -z "$step" ]] && continue
+    echo -e "    ${CAT_TEAL}${step}${NC}"
+  done < "$NEXT_STEPS"
+  echo ""
+  echo -e "      ${CAT_SUBTEXT1}These need a browser or your input, so they are not automated.${NC}"
+  echo -e "      ${CAT_SUBTEXT1}Re-run ${CAT_TEAL}dotfiles${CAT_SUBTEXT1} afterwards to finish anything that depended on them.${NC}"
+  echo ""
+fi
+
 # The git role has now generated an SSH key and uploaded it to GitHub, so the
 # remote can be upgraded from HTTPS to SSH for authenticated pushes.
 if git -C "$DOTFILES_DIR" remote get-url origin 2>/dev/null | grep -q '^https://'; then

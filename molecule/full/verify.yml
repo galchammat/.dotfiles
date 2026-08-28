@@ -1,0 +1,197 @@
+---
+- name: Verify a complete install
+  hosts: all
+  gather_facts: true
+  vars:
+    ansible_user: tester
+    home: "{{ ansible_facts['user_dir'] }}"
+
+  tasks:
+    - name: Load the pinned neovim version
+      ansible.builtin.include_vars:
+        file: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/ansible/roles/packages/defaults/main.yml"
+
+    # --- the repo landed in the new location, not the old bare layout --------
+    - name: Stat the repo and the old bare path
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: repo_paths
+      loop:
+        - "{{ home }}/.dotfiles/.git"
+        - "{{ home }}/.dotfiles.git"
+
+    - name: Assert a normal clone at ~/.dotfiles and no bare repo
+      ansible.builtin.assert:
+        that:
+          - repo_paths.results[0].stat.exists
+          - not repo_paths.results[1].stat.exists
+        fail_msg: "Expected a working clone at ~/.dotfiles and no ~/.dotfiles.git"
+
+    # --- stow linked the dotfiles ------------------------------------------
+    - name: Stat representative stowed files
+      ansible.builtin.stat:
+        path: "{{ home }}/{{ item }}"
+        follow: false
+      register: linked
+      loop:
+        - .zshrc
+        - .zshenv
+        - .config/nvim/init.lua
+        - .config/tmux/tmux.conf
+        - .config/git/config
+        - .local/bin/dotfiles
+
+    - name: Assert each is a symlink into the repo
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.islnk
+          - "'.dotfiles/' in item.stat.lnk_target"
+        fail_msg: >-
+          ~/{{ item.item }} is {{ 'missing' if not item.stat.exists
+          else ('not a symlink' if not item.stat.islnk
+          else 'pointing at ' ~ item.stat.lnk_target) }}
+      loop: "{{ linked.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: The stock .zshrc was preserved, not clobbered
+      ansible.builtin.slurp:
+        src: "{{ home }}/.dotfiles-backup/.zshrc"
+      register: backup_zshrc
+
+    - name: Assert the original survived oh-my-zsh and stow
+      ansible.builtin.assert:
+        that: (backup_zshrc.content | b64decode) is search('ORIGINAL-ZSHRC-MUST-SURVIVE')
+        fail_msg: "The pre-existing ~/.zshrc was not preserved in ~/.dotfiles-backup/."
+
+    # oh-my-zsh replaces ~/.zshrc unless installed with --keep-zshrc, which
+    # would silently undo the stow link in the very same run.
+    - name: Assert oh-my-zsh did not replace the stowed .zshrc
+      ansible.builtin.stat:
+        path: "{{ home }}/.zshrc.pre-oh-my-zsh"
+      register: omz_backup
+
+    - name: Fail if oh-my-zsh took over .zshrc
+      ansible.builtin.assert:
+        that: not omz_backup.stat.exists
+        fail_msg: >-
+          ~/.zshrc.pre-oh-my-zsh exists, so oh-my-zsh replaced the stowed .zshrc.
+          The installer needs --keep-zshrc.
+
+    # --- the tools the setup depends on are present -------------------------
+    - name: Check each required command resolves
+      ansible.builtin.command:
+        cmd: sh -c 'command -v {{ item }}'
+      register: cmd_check
+      changed_when: false
+      failed_when: false
+      loop: [nvim, tmux, zsh, git, gh, stow, rg, unzip, curl, node]
+
+    - name: Assert every required command is installed
+      ansible.builtin.assert:
+        that: item.rc == 0
+        fail_msg: "'{{ item.item }}' is missing after a full install."
+      loop: "{{ cmd_check.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Assert neovim is the pinned prebuilt release
+      ansible.builtin.command:
+        cmd: nvim --version
+      register: nvim_ver
+      changed_when: false
+
+    - name: Check the neovim version matches the pin
+      ansible.builtin.assert:
+        that: (nvim_ver.stdout_lines | first | trim) == ('NVIM ' ~ neovim_version)
+        fail_msg: "Expected NVIM {{ neovim_version }}, got {{ nvim_ver.stdout_lines | first }}"
+
+    # --- the repo is clean, so the next update can fast-forward -------------
+    # Ansible writing through a stowed symlink would dirty the working tree and
+    # break `git pull --ff-only` on the next run.
+    - name: Check the repo working tree after a full install
+      ansible.builtin.command:
+        cmd: git -C {{ home }}/.dotfiles status --porcelain
+      register: repo_status
+      changed_when: false
+
+    - name: Assert nothing was written into the repo
+      ansible.builtin.assert:
+        that: repo_status.stdout | trim | length == 0
+        fail_msg: >-
+          The dotfiles repo is dirty after installing:
+          {{ repo_status.stdout }}
+          Something wrote through a stowed symlink; the next `git pull --ff-only`
+          would fail.
+
+    - name: Confirm the next update would fast-forward cleanly
+      ansible.builtin.command:
+        cmd: git -C {{ home }}/.dotfiles pull --ff-only
+      register: repo_pull
+      changed_when: false
+      failed_when: repo_pull.rc != 0
+
+    # --- the shell config actually loads ------------------------------------
+    - name: Start zsh the way a login shell would
+      ansible.builtin.command:
+        cmd: zsh -l -i -c 'echo SHELL_OK; echo "EDITOR=$EDITOR"; command -v nvim >/dev/null && echo NVIM_ON_PATH'
+      register: zsh_start
+      changed_when: false
+      failed_when: false
+      environment:
+        HOME: "{{ home }}"
+
+    - name: Show what the shell reported
+      ansible.builtin.debug:
+        msg:
+          stdout: "{{ zsh_start.stdout_lines | default([]) }}"
+          stderr: "{{ (zsh_start.stderr_lines | default([]))[:15] }}"
+
+    - name: Assert the shell config loads and finds its tools
+      ansible.builtin.assert:
+        that:
+          - zsh_start.rc == 0
+          - zsh_start.stdout is search('SHELL_OK')
+          - zsh_start.stdout is search('EDITOR=nvim')
+          - zsh_start.stdout is search('NVIM_ON_PATH')
+        fail_msg: "zsh did not start cleanly with the stowed config:\n{{ zsh_start.stderr }}"
+
+    # --- the git role completed without a human -----------------------------
+    - name: An SSH key was generated unattended
+      ansible.builtin.stat:
+        path: "{{ home }}/.ssh/id_ed25519"
+      register: ssh_key
+
+    - name: Assert the key exists and is usable without a passphrase
+      ansible.builtin.assert:
+        that: ssh_key.stat.exists
+        fail_msg: "The git role did not generate ~/.ssh/id_ed25519."
+
+    - name: The key must have no passphrase, or nothing can use it unattended
+      ansible.builtin.command:
+        cmd: ssh-keygen -y -P "" -f {{ home }}/.ssh/id_ed25519
+      register: key_passphrase
+      changed_when: false
+      failed_when: false
+
+    - name: Assert the key opens with an empty passphrase
+      ansible.builtin.assert:
+        that: key_passphrase.rc == 0
+        fail_msg: "~/.ssh/id_ed25519 is passphrase-protected, so the run was not unattended."
+
+    - name: The steps needing a human were recorded rather than run
+      ansible.builtin.slurp:
+        src: "{{ home }}/.dotfiles-next-steps"
+      register: next_steps
+
+    - name: Assert the GitHub auth step was deferred, not attempted
+      ansible.builtin.assert:
+        that: (next_steps.content | b64decode) is search('gh auth login')
+        fail_msg: >-
+          ~/.dotfiles-next-steps should list the GitHub auth command. Running it
+          inline blocks on a browser and stalls the whole playbook.
+
+    - name: Show the finish-setup commands the user will see
+      ansible.builtin.debug:
+        msg: "{{ (next_steps.content | b64decode).split('\n') | select | list }}"

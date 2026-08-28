@@ -1,0 +1,44 @@
+---
+# Full install: runs the real bin/dotfiles end to end, exercising every role
+# together on a clean Fedora machine.
+#
+# The other scenarios each cover one slice (stow linking, the bootstrap clone,
+# the package set). Nothing covered all seven roles running in sequence, which
+# is the thing that actually has to work on a new machine.
+#
+# Use `molecule converge -s full` to leave the container up for inspection;
+# `molecule test -s full` destroys it at the end.
+driver:
+  name: podman
+
+platforms:
+  - name: dotfiles-full-fedora
+    image: quay.io/fedora/fedora:41
+    pre_build_image: true
+    command: /bin/sleep infinity
+
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: prepare.yml
+    converge: converge.yml
+    verify: verify.yml
+  env:
+    ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/ansible/roles"
+  config_options:
+    defaults:
+      stdout_callback: ansible.builtin.default
+      result_format: yaml
+      display_skipped_hosts: false
+
+scenario:
+  # No idempotence step: this drives the whole bootstrap script, which always
+  # reports work (cloning, package cache). Role-level idempotence is covered by
+  # the default and packages scenarios.
+  test_sequence:
+    - destroy
+    - create
+    - prepare
+    - converge
+    - verify
+    - destroy
