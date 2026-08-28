@@ -154,6 +154,27 @@
       changed_when: false
       failed_when: repo_pull.rc != 0
 
+    # --- fetch anonymously, push authenticated -------------------------------
+    # A fresh machine has no SSH key, so fetching must not require one. Pushing
+    # must still be authenticated. url.pushInsteadOf gives both without ever
+    # rewriting the remote.
+    - name: Read the fetch and push URLs git would actually use
+      ansible.builtin.command:
+        cmd: git -C {{ home }}/.dotfiles remote -v
+      register: remote_urls
+      changed_when: false
+
+    - name: Assert fetch stays on HTTPS and push resolves to SSH
+      ansible.builtin.assert:
+        that:
+          - remote_urls.stdout is search('https://github.com/.*\(fetch\)')
+          - remote_urls.stdout is search('git@github.com:.*\(push\)')
+        fail_msg: >-
+          Expected an HTTPS fetch URL and an SSH push URL, got:
+          {{ remote_urls.stdout }}
+          Fetching over SSH would break on a machine whose key is not yet
+          uploaded to GitHub.
+
     # --- the shell config actually loads ------------------------------------
     - name: Start zsh the way a login shell would
       ansible.builtin.command:
