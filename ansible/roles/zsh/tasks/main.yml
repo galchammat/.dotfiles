@@ -82,6 +82,9 @@
       - "{{ ansible_facts['user_id'] }}"
   become: true
   register: chsh_result
+  # Report changed only when the shell was actually changed: chsh is allowed to
+  # fail here, and a failed attempt is not a change.
+  changed_when: chsh_result.rc == 0
   failed_when: false
   when:
     - zsh_found
