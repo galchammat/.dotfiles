@@ -53,3 +53,30 @@
         AddKeysToAgent yes
     create: true
     mode: "0600"
+
+# The interactive `github` role is held out of the full run (its `never` tag),
+# so the full playbook can never register the key by itself. Surface a next-step
+# telling the user to run it, but only while the key is not yet on the account.
+# The runner (bin/dotfiles) prints ~/.dotfiles-next-steps at the very end.
+- name: "SSH | Read the local public key body"
+  ansible.builtin.set_fact:
+    ssh_pubkey_body: "{{ lookup('file', ansible_facts['user_dir'] + '/.ssh/id_ed25519.pub').split(' ')[1] }}"
+  when: not ansible_check_mode
+
+- name: "SSH | Check whether the key is already registered on GitHub"
+  # Non-interactive probe. If gh is missing or not logged in this fails, which
+  # we treat as "not registered" so the setup hint is shown. Never prompts.
+  ansible.builtin.command: gh ssh-key list
+  register: gh_key_list
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: "SSH | Advise running github-setup until the key is registered"
+  ansible.builtin.lineinfile:
+    path: "{{ ansible_facts['user_dir'] }}/.dotfiles-next-steps"
+    line: "dotfiles --github-setup"
+    create: true
+    mode: "0644"
+    state: "{{ 'absent' if ssh_pubkey_body in (gh_key_list.stdout | default('')) else 'present' }}"
+  when: not ansible_check_mode
