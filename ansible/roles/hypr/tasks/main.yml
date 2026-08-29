@@ -61,12 +61,13 @@
       {{ hypr_fedora_package_checks.results
          | default([])
          | selectattr('rc', 'eq', 0)
+         | selectattr('stdout', 'ne', '')
          | map(attribute='item')
          | list }}
     hypr_fedora_missing_packages: >-
       {{ hypr_fedora_package_checks.results
          | default([])
-         | rejectattr('rc', 'eq', 0)
+         | rejectattr('stdout', 'ne', '')
          | map(attribute='item')
          | list }}
   when: ansible_facts['os_family'] == 'RedHat'
