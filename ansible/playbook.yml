@@ -6,6 +6,7 @@
   roles:
     - { role: nvm, tags: ["nvm"]}
     - { role: packages, tags: ["packages"] }
+    - { role: ssh, tags: ["ssh"]}
     - { role: fonts, tags: ["fonts"] }
     - { role: zsh, tags: ["zsh"]}
     - { role: i3, tags: ["i3"]}
