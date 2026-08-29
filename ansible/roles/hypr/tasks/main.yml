@@ -12,8 +12,9 @@
 
 - name: "Hypr | Fedora | Check Hyprland COPR metadata"
   ansible.builtin.uri:
-    url: "https://copr.fedorainfracloud.org/api_3/project?ownername={{ hypr_fedora_copr.split('/')[0] }}&projectname={{ hypr_fedora_copr.split('/')[1] }}"
+    url: "https://copr.fedorainfracloud.org/api_3/project?ownername={{ item.split('/')[0] }}&projectname={{ item.split('/')[1] }}"
     return_content: true
+  loop: "{{ hypr_fedora_coprs }}"
   register: hypr_fedora_copr_metadata
   changed_when: false
   failed_when: false
@@ -22,29 +23,33 @@
     - can_install_packages | default(false)
     - not ansible_check_mode
 
-- name: "Hypr | Fedora | Decide whether Hyprland COPR supports this release"
+- name: "Hypr | Fedora | Decide which COPRs support this release"
   ansible.builtin.set_fact:
     hypr_fedora_copr_chroot: "fedora-{{ ansible_facts['distribution_major_version'] }}-{{ ansible_facts['architecture'] }}"
-    hypr_fedora_copr_available: >-
-      {{ hypr_fedora_copr_metadata.status | default(0) == 200
-         and ('fedora-' ~ ansible_facts['distribution_major_version'] ~ '-' ~ ansible_facts['architecture'])
-             in (hypr_fedora_copr_metadata.json.chroot_repos.keys() | default([])) }}
+    hypr_fedora_available_coprs: >-
+      {{ hypr_fedora_copr_metadata.results | default([])
+         | selectattr('status', 'defined')
+         | selectattr('status', 'eq', 200)
+         | selectattr('json.chroot_repos', 'defined')
+         | selectattr('json.chroot_repos', 'contains',
+                      'fedora-' ~ ansible_facts['distribution_major_version'] ~ '-' ~ ansible_facts['architecture'])
+         | map(attribute='item') | list }}
   when: ansible_facts['os_family'] == 'RedHat'
 
-# The tracked config is hyprland.lua, which needs recent Hyprland Lua config
-# support. solopasha/hyprland tracks current Hyprland ecosystem packages for
-# Fedora when base Fedora repositories lag or omit helper components. Fedora 41
-# is skipped here because the COPR no longer publishes that chroot.
-- name: "Hypr | Fedora | Enable Hyprland COPR"
+# sdegler/hyprland tracks the current Hyprland ecosystem for Fedora when base
+# repositories lag; lihaohong/yazi supplies yazi. Each COPR is enabled only when
+# it publishes a chroot for this release/arch, so an unsupported future release
+# simply skips it (and the assertion below then flags the missing session).
+- name: "Hypr | Fedora | Enable Hyprland COPRs"
   community.general.copr:
-    name: "{{ hypr_fedora_copr }}"
+    name: "{{ item }}"
     state: enabled
   become: true
+  loop: "{{ hypr_fedora_available_coprs | default([]) }}"
   when:
     - ansible_facts['os_family'] == 'RedHat'
     - can_install_packages | default(false)
     - not ansible_check_mode
-    - hypr_fedora_copr_available | default(false)
 
 - name: "Hypr | Fedora | Check available Hyprland packages"
   ansible.builtin.command: "dnf -q repoquery --available --latest-limit=1 {{ item }}"
@@ -153,7 +158,7 @@
   ansible.builtin.debug:
     msg:
       - "Hyprland desktop status:"
-      - "- Fedora COPR: {{ (hypr_fedora_copr ~ ' enabled for ' ~ hypr_fedora_copr_chroot) if (ansible_facts['os_family'] == 'RedHat' and hypr_fedora_copr_available | default(false)) else ('not available for ' ~ hypr_fedora_copr_chroot | default('this release')) if ansible_facts['os_family'] == 'RedHat' else 'not used on this distro' }}"
+      - "- Fedora COPR: {{ (hypr_fedora_available_coprs | default([]) | join(', ') ~ ' enabled for ' ~ hypr_fedora_copr_chroot) if (ansible_facts['os_family'] == 'RedHat' and (hypr_fedora_available_coprs | default([]) | length > 0)) else ('none available for ' ~ hypr_fedora_copr_chroot | default('this release')) if ansible_facts['os_family'] == 'RedHat' else 'not used on this distro' }}"
       - "- Fedora packages available: {{ hypr_fedora_available_packages | default([]) | join(', ') if ansible_facts['os_family'] == 'RedHat' else 'n/a' }}"
       - "- Fedora packages missing/skipped: {{ hypr_fedora_missing_packages | default([]) | join(', ') if ansible_facts['os_family'] == 'RedHat' else 'n/a' }}"
       - "- Debian packages available: {{ hypr_debian_available_packages | default([]) | join(', ') if ansible_facts['os_family'] == 'Debian' else 'n/a' }}"
@@ -164,3 +169,23 @@
       - "- Lua config note: .config/hypr/hyprland.lua requires a recent Hyprland build with Lua config support."
       - ""
       - "{{ 'Note: Log out and select Hyprland from the display manager to use this session.' if (hypr_desktop_file.stat.exists | default(false)) else 'Note: Install packages first, then select Hyprland from the display manager.' }}"
+
+# Fail loudly instead of silently no-op'ing. The role used to skip missing
+# packages and only *print* a status line, so a broken COPR left Hyprland
+# uninstalled while ansible and molecule both stayed green (no failure -> no
+# Discord alert). Assert the session file actually exists whenever we were able
+# to install packages, so a regression fails the play and CI.
+- name: "Hypr | Assert the Hyprland session is actually installed"
+  ansible.builtin.assert:
+    that:
+      - hypr_desktop_file.stat.exists | default(false)
+    fail_msg: >-
+      Hyprland is not installed: /usr/share/wayland-sessions/hyprland.desktop is
+      missing, so it will not appear in the display manager. The COPR probably
+      lacks a chroot for {{ hypr_fedora_copr_chroot | default('this release') }}
+      (available: {{ hypr_fedora_available_coprs | default([]) | join(', ') | default('none', true) }}).
+    success_msg: "Hyprland session present; it will appear in the display manager."
+  when:
+    - can_install_packages | default(false)
+    - not ansible_check_mode
+    - ansible_facts['os_family'] in ['RedHat', 'Debian']

@@ -1,10 +1,15 @@
 ---
 # Hyprland's Lua configuration support is recent, and the user's tracked
 # .config/hypr/hyprland.lua depends on it. Fedora's base repositories can lag
-# behind Hyprland releases, so this role enables this COPR only when it has a
-# matching Fedora chroot. Fedora 41 is intentionally handled without hard-failing
-# because solopasha/hyprland currently publishes only Rawhide packages.
-hypr_fedora_copr: solopasha/hyprland
+# behind Hyprland releases, so this role enables these COPRs, each only when it
+# publishes a matching Fedora chroot for this release/arch:
+#   - sdegler/hyprland: the full Hyprland stack (compositor + hypr* helpers),
+#     built for current Fedora releases (F43/44/45). Replaces solopasha/hyprland,
+#     which now publishes Rawhide only and therefore 404s on stable Fedora.
+#   - lihaohong/yazi: yazi, which is not packaged in base Fedora or sdegler.
+hypr_fedora_coprs:
+  - sdegler/hyprland
+  - lihaohong/yazi
 
 # Fedora package candidates for the tools directly referenced by
 # .config/hypr/*.conf and .config/hypr/hyprland.lua. The role probes dnf and
@@ -24,7 +29,7 @@ hypr_fedora_candidate_packages:
   - kitty
   - firefox
   - yazi
-  - rofi-wayland
+  - rofi
   - mako
   - gnome-keyring
 
