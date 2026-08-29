@@ -10,10 +10,10 @@
     - { role: fonts, tags: ["fonts"] }
     - { role: zsh, tags: ["zsh"]}
     - { role: i3, tags: ["i3"]}
+    - { role: hypr, tags: ["hypr"] }
     - { role: git, tags: ["git"]}
     # Interactive, one-time GitHub account setup (browser device flow). The
     # `never` tag keeps it OUT of a normal full run; invoke it explicitly with:
     #   ansible-playbook playbook.yml --tags github-setup
     - { role: github, tags: ["never", "github-setup"]}
-
 
