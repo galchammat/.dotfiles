@@ -11,3 +11,7 @@ bold_italic = { family = "JetBrainsMono Nerd Font Mono", style = "Bold Italic" }
 key = "Return"
 mods = "Shift"
 chars = "\u001B\r"
+
+[terminal.shell]
+program = "/usr/bin/zsh"
+args = ["-l"]

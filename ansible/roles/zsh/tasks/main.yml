@@ -32,86 +32,82 @@
           - ""
           - "Some dotfiles features will not work without zsh."
 
-- name: "Zsh | Find the zsh binary"
-  # command -v is a shell builtin. `which` is a separate package that minimal
-  # images do not always ship, and its absence would look like zsh is missing.
-  ansible.builtin.shell:
-    cmd: command -v zsh
-    executable: /bin/sh
+- name: "Zsh | Check current shell"
+  ansible.builtin.command: "echo $SHELL"
+  register: current_shell
+  changed_when: false
+
+- name: "Zsh | Get zsh path"
+  ansible.builtin.command: which zsh
   register: zsh_path
   changed_when: false
   failed_when: false
-  check_mode: false
+  when: zsh_check.rc == 0 or zsh_system_install is succeeded
 
-- name: "Zsh | Read the account's real login shell"
-  # Read the passwd database rather than $SHELL: $SHELL reports the shell of
-  # the running process, which is whatever ansible was invoked from, not the
-  # shell recorded for the account.
-  ansible.builtin.shell:
-    cmd: 'getent passwd "$(id -un)" | cut -d: -f7' 
-    executable: /bin/sh
-  register: current_shell
+- name: "Zsh | Check for passwordless sudo"
+  ansible.builtin.command: sudo -n true
+  register: sudo_check
+  become: false
   changed_when: false
   failed_when: false
-  check_mode: false
+  when:
+    - zsh_path.stdout is defined
+    - zsh_path.stdout != ""
+    - current_shell.stdout != zsh_path.stdout
 
-- name: "Zsh | Check whether the account is local"
-  # chsh can only edit /etc/passwd. On a machine where accounts come from a
-  # directory service (SSSD, LDAP, AD) the user is resolvable but not local,
-  # and chsh fails with "can only change local entries".
-  ansible.builtin.shell:
-    cmd: 'grep -q "^$(id -un):" /etc/passwd' 
-    executable: /bin/sh
-  register: account_is_local
-  changed_when: false
-  failed_when: false
-  check_mode: false
-
-- name: "Zsh | Decide whether the shell needs changing"
-  ansible.builtin.set_fact:
-    zsh_found: "{{ zsh_path.rc | default(1) == 0 and (zsh_path.stdout | default('') | trim) != '' }}"
-    zsh_is_current: "{{ (current_shell.stdout | default('') | trim) == (zsh_path.stdout | default('') | trim) }}"
-    zsh_account_local: "{{ account_is_local.rc | default(1) == 0 }}"
-
-- name: "Zsh | Set zsh as default shell"
-  ansible.builtin.command:
-    argv:
-      - chsh
-      - -s
-      - "{{ zsh_path.stdout | trim }}"
-      - "{{ ansible_facts['user_id'] }}"
+- name: "Zsh | Set zsh as default shell (chsh)"
+  ansible.builtin.command: "chsh -s {{ zsh_path.stdout }} {{ ansible_facts['user_id'] }}"
   become: true
   register: chsh_result
-  # Report changed only when the shell was actually changed: chsh is allowed to
-  # fail here, and a failed attempt is not a change.
+  # chsh only edits /etc/passwd entries. Accounts provided via systemd userdb /
+  # sssd / LDAP ("can only change local entries") cannot be modified even as root;
+  # that is an environment limitation, not a real failure. The exec hook below is
+  # the portable fallback that always works.
   changed_when: chsh_result.rc == 0
-  failed_when: false
+  failed_when:
+    - chsh_result.rc != 0
+    - "'can only change local entries' not in (chsh_result.stderr | default(''))"
   when:
-    - zsh_found
-    - not zsh_is_current
-    - zsh_account_local
+    - zsh_path.stdout is defined
+    - zsh_path.stdout != ""
+    - current_shell.stdout != zsh_path.stdout
     - can_install_packages | default(false)
-    - not ansible_check_mode
+    - sudo_check.rc | default(1) == 0
 
-- name: "Zsh | Explain how to change the shell by hand"
-  # Not a failure: the shell is a preference, and everything else in the
-  # playbook works without it. Refusing to continue over this would block the
-  # whole run on a managed machine where it can never succeed.
+- name: "Zsh | Remove legacy inline handoff block from .bashrc"
+  ansible.builtin.blockinfile:
+    path: "{{ ansible_facts['user_dir'] }}/.bashrc"
+    marker: "# {mark} ANSIBLE MANAGED: zsh handoff"
+    state: absent
+  # An earlier version of this role wrote an interactive bash->zsh exec hook
+  # here. That approach was dropped in favour of chsh plus terminal-emulator
+  # shell settings, so strip any leftover block from untracked ~/.bashrc.
+  when: zsh_path.stdout is defined
+
+- name: "Zsh | Remove any legacy handoff block from .bash_profile"
+  ansible.builtin.blockinfile:
+    path: "{{ ansible_facts['user_dir'] }}/.bash_profile"
+    marker: "# {mark} ANSIBLE MANAGED: zsh handoff"
+    state: absent
+  # Older versions of this role also wrote the hook into .bash_profile; keep the
+  # top-level tidy by removing it if present. Never creates the file.
+  when: zsh_path.stdout is defined
+
+- name: "Zsh | Note about default shell"
   ansible.builtin.debug:
     msg: >-
-      {{ ['Could not set zsh as the login shell automatically.', ''] +
-         (['This account is not a local /etc/passwd entry, so chsh cannot change it.',
-           'It most likely comes from a directory service such as SSSD, LDAP or AD.',
-           '',
-           'Ask whoever manages the directory to set it, or override it per-session',
-           'by exec-ing zsh from your shell rc file.']
-          if not zsh_account_local
-          else ['Run it yourself:', '  chsh -s ' ~ (zsh_path.stdout | default('/usr/bin/zsh') | trim)])
-         + ['', 'Current shell: ' ~ (current_shell.stdout | default('unknown') | trim)] }}
-  when:
-    - zsh_found
-    - not zsh_is_current
-    - not (zsh_account_local and (can_install_packages | default(false)) and (chsh_result.rc | default(1)) == 0)
+      {% if chsh_result is defined and chsh_result.changed | default(false) %}
+      ✓ Login shell changed to zsh via chsh.
+      {% elif chsh_result is defined and 'can only change local entries' in (chsh_result.stderr | default('')) %}
+      ⚠️  This account is not a local /etc/passwd user (managed via systemd userdb /
+      sssd / LDAP), so chsh cannot change the login shell. Terminal emulators use
+      their own shell setting; on a bare TTY/SSH session run `exec zsh`.
+      {% elif current_shell.stdout != zsh_path.stdout | default('') and not (can_install_packages | default(false) and sudo_check.rc | default(1) == 0) %}
+      ⚠️  No passwordless sudo, so chsh was skipped. Terminal emulators use their
+      own shell setting; on a bare TTY/SSH session run `exec zsh`.
+      {% else %}
+      ✓ zsh is already the login shell.
+      {% endif %}
 
 - name: "Zsh | Check if oh-my-zsh is already installed"
   ansible.builtin.stat:

@@ -1,0 +1,102 @@
+---
+# INTERACTIVE, one-time GitHub account setup.
+#
+# Deliberately EXCLUDED from the full playbook (tagged `never` in playbook.yml)
+# because it opens a browser device flow and waits for the human. The roles that
+# DO run in the full playbook (ssh, git) are kept strictly non-interactive.
+#
+# Run it explicitly when setting up a new machine/account:
+#     ansible-playbook playbook.yml --tags github-setup
+#
+# Steps: (0) ensure the ed25519 key exists, (1) log gh in via the browser device
+# flow and grant the key-admin scopes, (2) register the key on GitHub for both
+# authentication and signing.
+
+- name: "GitHub | Ensure ~/.ssh exists"
+  ansible.builtin.file:
+    path: "{{ ansible_facts['user_dir'] }}/.ssh"
+    state: directory
+    mode: "0700"
+
+- name: "GitHub | Ensure ed25519 key exists"
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -t
+      - ed25519
+      - -N
+      - ""
+      - -C
+      - "{{ git_user_email }}"
+      - -f
+      - "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519"
+    creates: "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519"
+
+- name: "GitHub | Check that gh is installed"
+  ansible.builtin.command: which gh
+  register: gh_check
+  changed_when: false
+  failed_when: false
+
+- name: "GitHub | Require gh"
+  ansible.builtin.fail:
+    msg: "GitHub CLI (gh) is not installed. Run the packages role first (it installs gh)."
+  when: gh_check.rc != 0
+
+- name: "GitHub | Inspect current gh auth + scopes"
+  ansible.builtin.command: gh auth status --hostname github.com
+  register: gh_auth
+  changed_when: false
+  failed_when: false
+
+- name: "GitHub | Record combined gh auth output"
+  ansible.builtin.set_fact:
+    gh_auth_text: "{{ (gh_auth.stdout | default('')) ~ (gh_auth.stderr | default('')) }}"
+
+# `< /dev/tty > /dev/tty` reconnects gh to the controlling terminal so its
+# one-time code, URL and prompts are visible/interactive even though Ansible
+# otherwise captures task stdout. Requires a real TTY, which is exactly why this
+# role must never run unattended / in CI.
+- name: "GitHub | Browser login (device flow)"
+  ansible.builtin.shell: >
+    gh auth login --hostname github.com --git-protocol ssh --web --skip-ssh-key
+    < /dev/tty > /dev/tty 2>&1
+  when: gh_auth.rc != 0
+
+- name: "GitHub | Grant key-admin scopes (device flow)"
+  ansible.builtin.shell: >
+    gh auth refresh --hostname github.com
+    -s admin:public_key,admin:ssh_signing_key
+    < /dev/tty > /dev/tty 2>&1
+  when: >
+    gh_auth.rc != 0
+    or ('admin:public_key' not in gh_auth_text)
+    or ('admin:ssh_signing_key' not in gh_auth_text)
+
+- name: "GitHub | Machine ID for a unique key title"
+  ansible.builtin.slurp:
+    src: /etc/machine-id
+  register: machine_id_content
+
+- name: "GitHub | Register the key for authentication and signing"
+  # Same key, both purposes: GitHub stores one entry per type. Re-running is a
+  # no-op once the key already exists on the account.
+  ansible.builtin.command: >
+    gh ssh-key add "{{ ansible_facts['user_dir'] }}/.ssh/id_ed25519.pub"
+    --type {{ item }}
+    --title "{{ ansible_facts['hostname'] }}-{{ (machine_id_content.content | b64decode | trim)[:8] }}"
+  loop:
+    - authentication
+    - signing
+  register: gh_key_add
+  changed_when: "'added' in (gh_key_add.stdout | default('') | lower)"
+  failed_when:
+    - gh_key_add.rc != 0
+    - "'already' not in ((gh_key_add.stdout | default('') ~ gh_key_add.stderr | default('')) | lower)"
+
+- name: "GitHub | Setup complete"
+  ansible.builtin.debug:
+    msg:
+      - "✓ GitHub setup complete for {{ ansible_facts['hostname'] }}."
+      - "  Key registered for authentication and signing."
+      - "  Verify: gh ssh-key list"
