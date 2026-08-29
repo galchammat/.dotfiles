@@ -32,41 +32,83 @@
           - ""
           - "Some dotfiles features will not work without zsh."
 
-- name: "Zsh | Check current shell"
-  ansible.builtin.command: "echo $SHELL"
-  register: current_shell
-  changed_when: false
-
-- name: "Zsh | Get zsh path"
-  ansible.builtin.command: which zsh
+- name: "Zsh | Find the zsh binary"
+  # command -v is a shell builtin. `which` is a separate package that minimal
+  # images do not always ship, and its absence would look like zsh is missing.
+  ansible.builtin.shell:
+    cmd: command -v zsh
+    executable: /bin/sh
   register: zsh_path
   changed_when: false
   failed_when: false
-  when: zsh_check.rc == 0 or zsh_system_install is succeeded
+  check_mode: false
+
+- name: "Zsh | Read the account's real login shell"
+  # Read the passwd database rather than $SHELL: $SHELL reports the shell of
+  # the running process, which is whatever ansible was invoked from, not the
+  # shell recorded for the account.
+  ansible.builtin.shell:
+    cmd: 'getent passwd "$(id -un)" | cut -d: -f7' 
+    executable: /bin/sh
+  register: current_shell
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: "Zsh | Check whether the account is local"
+  # chsh can only edit /etc/passwd. On a machine where accounts come from a
+  # directory service (SSSD, LDAP, AD) the user is resolvable but not local,
+  # and chsh fails with "can only change local entries".
+  ansible.builtin.shell:
+    cmd: 'grep -q "^$(id -un):" /etc/passwd' 
+    executable: /bin/sh
+  register: account_is_local
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: "Zsh | Decide whether the shell needs changing"
+  ansible.builtin.set_fact:
+    zsh_found: "{{ zsh_path.rc | default(1) == 0 and (zsh_path.stdout | default('') | trim) != '' }}"
+    zsh_is_current: "{{ (current_shell.stdout | default('') | trim) == (zsh_path.stdout | default('') | trim) }}"
+    zsh_account_local: "{{ account_is_local.rc | default(1) == 0 }}"
 
 - name: "Zsh | Set zsh as default shell"
-  ansible.builtin.command: "chsh -s {{ zsh_path.stdout }} {{ ansible_facts['user_id'] }}"
+  ansible.builtin.command:
+    argv:
+      - chsh
+      - -s
+      - "{{ zsh_path.stdout | trim }}"
+      - "{{ ansible_facts['user_id'] }}"
   become: true
+  register: chsh_result
+  failed_when: false
   when:
-    - zsh_path.stdout is defined
-    - zsh_path.stdout != ""
-    - current_shell.stdout != zsh_path.stdout
+    - zsh_found
+    - not zsh_is_current
+    - zsh_account_local
     - can_install_packages | default(false)
+    - not ansible_check_mode
 
-- name: "Zsh | Warning about changing shell without sudo"
+- name: "Zsh | Explain how to change the shell by hand"
+  # Not a failure: the shell is a preference, and everything else in the
+  # playbook works without it. Refusing to continue over this would block the
+  # whole run on a managed machine where it can never succeed.
   ansible.builtin.debug:
-    msg:
-      - "⚠️  Cannot set zsh as default shell without sudo access."
-      - ""
-      - "Your current shell: {{ current_shell.stdout }}"
-      - "Zsh location: {{ zsh_path.stdout | default('not found') }}"
-      - ""
-      - "To change your shell manually, run:"
-      - "chsh -s {{ zsh_path.stdout | default('/usr/bin/zsh') }}"
+    msg: >-
+      {{ ['Could not set zsh as the login shell automatically.', ''] +
+         (['This account is not a local /etc/passwd entry, so chsh cannot change it.',
+           'It most likely comes from a directory service such as SSSD, LDAP or AD.',
+           '',
+           'Ask whoever manages the directory to set it, or override it per-session',
+           'by exec-ing zsh from your shell rc file.']
+          if not zsh_account_local
+          else ['Run it yourself:', '  chsh -s ' ~ (zsh_path.stdout | default('/usr/bin/zsh') | trim)])
+         + ['', 'Current shell: ' ~ (current_shell.stdout | default('unknown') | trim)] }}
   when:
-    - not (can_install_packages | default(false))
-    - zsh_path.stdout is defined
-    - current_shell.stdout != zsh_path.stdout
+    - zsh_found
+    - not zsh_is_current
+    - not (zsh_account_local and (can_install_packages | default(false)) and (chsh_result.rc | default(1)) == 0)
 
 - name: "Zsh | Check if oh-my-zsh is already installed"
   ansible.builtin.stat:
