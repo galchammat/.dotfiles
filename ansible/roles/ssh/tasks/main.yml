@@ -72,10 +72,10 @@
   failed_when: false
   when: not ansible_check_mode
 
-- name: "SSH | Advise running github-setup until the key is registered"
+- name: "SSH | Advise running 'dotfiles --git' until the key is registered"
   ansible.builtin.lineinfile:
     path: "{{ ansible_facts['user_dir'] }}/.dotfiles-next-steps"
-    line: "dotfiles --github-setup"
+    line: "dotfiles --git"
     create: true
     mode: "0644"
     state: "{{ 'absent' if ssh_pubkey_body in (gh_key_list.stdout | default('')) else 'present' }}"

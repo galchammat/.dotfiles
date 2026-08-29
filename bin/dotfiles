@@ -134,7 +134,7 @@ show_help() {
   echo -e "    ${CAT_GREEN}--version${NC}               Show version information"
   echo -e "    ${CAT_GREEN}--uninstall <role>${NC}      Uninstall a role (cleanup only)"
   echo -e "    ${CAT_GREEN}--delete <role>${NC}         Uninstall and delete a role from dotfiles"
-  echo -e "    ${CAT_GREEN}--github-setup${NC}          Register your SSH key on GitHub (interactive, one-time)"
+  echo -e "    ${CAT_GREEN}--git${NC}                   Register your SSH key on GitHub (interactive, one-time)"
   echo -e "    ${CAT_GREEN}--clone-only${NC}            Clone/update the repo only, skip packages and ansible"
   echo -e "    ${CAT_GREEN}-v, -vv, -vvv${NC}           Verbose mode (passed to ansible-playbook)"
   echo ""
@@ -155,7 +155,7 @@ show_help() {
   echo "    dotfiles --delete old_role"
   echo ""
   echo -e "    ${CAT_SUBTEXT1}# One-time: log in to GitHub and upload your SSH key (auth + signing)${NC}"
-  echo "    dotfiles --github-setup"
+  echo "    dotfiles --git"
   echo ""
   echo -e "${CAT_BLUE}ANSIBLE ARGUMENTS:${NC}"
   echo "    All arguments not recognized by dotfiles are passed to ansible-playbook."
@@ -549,7 +549,7 @@ while [[ $# -gt 0 ]]; do
       DELETE_ROLE="$2"
       shift 2
       ;;
-    --github-setup)
+    --git)
       GITHUB_SETUP=true
       shift
       ;;
@@ -705,7 +705,6 @@ if [[ -s "$NEXT_STEPS" ]]; then
   done < "$NEXT_STEPS"
   echo ""
   echo -e "      ${CAT_SUBTEXT1}These need a browser or your input, so they are not automated.${NC}"
-  echo -e "      ${CAT_SUBTEXT1}Re-run ${CAT_TEAL}dotfiles${CAT_SUBTEXT1} afterwards to finish anything that depended on them.${NC}"
   echo ""
   # gh only exists here to upload the key, and the GitHub API always needs a
   # token: SSH keys authenticate git, not the API. Pushing, pulling and commit
