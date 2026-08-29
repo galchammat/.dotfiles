@@ -1,5 +1,3 @@
-# Written by `gh auth login`; contains a live OAuth token.
-.config/gh/hosts.yml
 
 # Machine-generated git settings written by the ansible git role.
 .config/git/config.local

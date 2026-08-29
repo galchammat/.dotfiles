@@ -475,22 +475,6 @@ if ! [[ -d "$DOTFILES_GIT" ]]; then
   _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME checkout -f '$DOTFILES_BRANCH'"
   _task_done
 else
-  # .config/gh/hosts.yml used to be tracked, but `gh auth login` writes a live
-  # OAuth token into it, so it is untracked now. On a machine provisioned
-  # before that change the local copy holds a token and differs from HEAD,
-  # which would collide with pulling the removal. Set it aside, let the pull
-  # remove the tracked copy cleanly, and put the token back afterwards as an
-  # untracked file.
-  GH_HOSTS="$HOME/.config/gh/hosts.yml"
-  GH_HOSTS_BAK=""
-  if git --git-dir="$DOTFILES_GIT" --work-tree="$HOME" ls-files --error-unmatch .config/gh/hosts.yml >/dev/null 2>&1; then
-    __task "Preserving GitHub CLI credentials while they are untracked"
-    GH_HOSTS_BAK="$(mktemp)"
-    _cmd "cp '$GH_HOSTS' '$GH_HOSTS_BAK'"
-    _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME checkout -- .config/gh/hosts.yml"
-    _task_done
-  fi
-
   # A repo cloned by the old script has an SSH remote, so `pull` would still
   # need a key and an unlocked agent. Point it at HTTPS; pushes are unaffected
   # because .gitconfig rewrites the push URL back to SSH.
@@ -503,14 +487,6 @@ else
   __task "Updating dotfiles repository"
   _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME pull --quiet"
   _task_done
-
-  if [[ -n "$GH_HOSTS_BAK" ]]; then
-    __task "Restoring GitHub CLI credentials"
-    _cmd "mkdir -p '$(dirname "$GH_HOSTS")'"
-    _cmd "mv '$GH_HOSTS_BAK' '$GH_HOSTS'"
-    _cmd "chmod 600 '$GH_HOSTS'"
-    _task_done
-  fi
 fi
 
 # The work tree is the whole home directory, so without this every file in
@@ -519,6 +495,18 @@ fi
 # clone, so a repo cloned any other way, or one where the setting was lost,
 # reported ~50 untracked entries forever.
 _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME config --local status.showUntrackedFiles no"
+
+# .config/gh/hosts.yml is tracked as an empty skeleton, but `gh auth login`
+# writes a live OAuth token into it. skip-worktree keeps the local copy out of
+# git entirely: `git status` stays clean and `git add -A` will not stage it, so
+# the token cannot be committed to what is a public repo.
+#
+# gh 2.40+ stores tokens in the system credential store by default and would
+# not touch this file at all, but it falls back to plain text when no secret
+# service is running, which is the normal situation under WSL.
+if git --git-dir="$DOTFILES_GIT" --work-tree="$HOME" ls-files --error-unmatch .config/gh/hosts.yml >/dev/null 2>&1; then
+  _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME update-index --skip-worktree .config/gh/hosts.yml"
+fi
 
 if [[ "${CLONE_ONLY:-}" == "true" ]]; then
   echo -e "${CHECK_MARK} ${CAT_GREEN}Repository ready at ${DOTFILES_GIT}${NC}"
