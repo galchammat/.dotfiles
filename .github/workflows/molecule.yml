@@ -1,0 +1,36 @@
+name: molecule
+# Runs the full-playbook molecule scenario on every push to main and every PR.
+# The run spins up a Fedora container under podman and executes ansible/playbook.yml
+# end to end, so it takes ~10-15 minutes.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install podman and molecule
+        run: |
+          # ubuntu-latest ships podman, but install to pin the dependency explicitly.
+          sudo apt-get update
+          sudo apt-get install -y podman
+          python -m pip install --upgrade pip
+          pip install "molecule" "molecule-plugins[podman]" "ansible"
+
+      - name: Run the molecule test
+        run: molecule test
