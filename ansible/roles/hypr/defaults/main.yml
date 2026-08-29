@@ -1,0 +1,93 @@
+---
+# Hyprland's Lua configuration support is recent, and the user's tracked
+# .config/hypr/hyprland.lua depends on it. Fedora's base repositories can lag
+# behind Hyprland releases, so Fedora enables this COPR to prefer current
+# Hyprland ecosystem packages while keeping installation idempotent.
+hypr_fedora_copr: solopasha/hyprland
+
+# Fedora package names for the tools directly referenced by .config/hypr/*.conf
+# and .config/hypr/hyprland.lua. wl-clipboard is intentionally omitted because
+# the packages role already installs it on Fedora.
+hypr_fedora_packages:
+  # Core compositor and Hyprland helpers
+  - hyprland
+  - hypridle
+  - hyprpaper
+  - hyprsunset
+  - hyprlock
+  - hyprpolkitagent
+  - xdg-desktop-portal-hyprland
+
+  # Apps and desktop daemons launched by the config
+  - kitty
+  - firefox
+  - yazi
+  - rofi-wayland
+  - mako
+  - gnome-keyring
+
+  # Keybinding and media utilities
+  - grim
+  - slurp
+  - brightnessctl
+  - playerctl
+  - wireplumber
+  - pipewire
+  - pipewire-pulseaudio
+  - procps-ng
+
+# Debian/Ubuntu Hyprland packaging varies by release. The role probes these
+# candidates with apt-cache and installs only packages available in the enabled
+# apt repositories, then reports anything missing instead of failing the run.
+# wl-clipboard, pipewire, pipewire-pulse, and wireplumber are intentionally
+# omitted because the packages role already installs them on Debian/Ubuntu.
+hypr_debian_candidate_packages:
+  # Core compositor and Hyprland helpers
+  - hyprland
+  - hypridle
+  - hyprpaper
+  - hyprsunset
+  - hyprlock
+  - hyprpolkitagent
+  - xdg-desktop-portal-hyprland
+
+  # Apps and desktop daemons launched by the config
+  - kitty
+  - firefox
+  - yazi
+  - rofi
+  - mako-notifier
+  - gnome-keyring
+
+  # Keybinding and media utilities
+  - grim
+  - slurp
+  - brightnessctl
+  - playerctl
+  - procps
+
+# Commands the tracked Hyprland configs execute directly or require at runtime.
+# wl-copy and wpctl are checked here but installed by the packages role where it
+# already covers them.
+hypr_required_commands:
+  - Hyprland
+  - hyprctl
+  - hypridle
+  - hyprpaper
+  - hyprsunset
+  - hyprlock
+  - hyprpolkitagent
+  - kitty
+  - firefox
+  - yazi
+  - rofi
+  - mako
+  - gnome-keyring-daemon
+  - grim
+  - slurp
+  - wl-copy
+  - brightnessctl
+  - playerctl
+  - wpctl
+  - loginctl
+  - pidof

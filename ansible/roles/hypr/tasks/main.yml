@@ -1,0 +1,115 @@
+---
+- name: "Hypr | Fedora | Ensure COPR support is installed"
+  ansible.builtin.dnf:
+    name:
+      - dnf-plugins-core
+    state: present
+  become: true
+  when:
+    - ansible_facts['os_family'] == 'RedHat'
+    - can_install_packages | default(false)
+    - not ansible_check_mode
+
+# The tracked config is hyprland.lua, which needs recent Hyprland Lua config
+# support. solopasha/hyprland tracks current Hyprland ecosystem packages for
+# Fedora when base Fedora repositories lag or omit helper components.
+- name: "Hypr | Fedora | Enable Hyprland COPR"
+  community.general.copr:
+    name: "{{ hypr_fedora_copr }}"
+    state: enabled
+  become: true
+  when:
+    - ansible_facts['os_family'] == 'RedHat'
+    - can_install_packages | default(false)
+    - not ansible_check_mode
+
+- name: "Hypr | Fedora | Install Hyprland packages"
+  ansible.builtin.dnf:
+    name: "{{ hypr_fedora_packages }}"
+    state: present
+  become: true
+  when:
+    - ansible_facts['os_family'] == 'RedHat'
+    - can_install_packages | default(false)
+    - not ansible_check_mode
+
+- name: "Hypr | Debian | Update package cache"
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  become: true
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - can_install_packages | default(false)
+    - not ansible_check_mode
+
+- name: "Hypr | Debian | Check available Hyprland packages"
+  ansible.builtin.command: "apt-cache show {{ item }}"
+  loop: "{{ hypr_debian_candidate_packages }}"
+  register: hypr_debian_package_checks
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: "Hypr | Debian | Collect available Hyprland packages"
+  ansible.builtin.set_fact:
+    hypr_debian_available_packages: >-
+      {{ hypr_debian_package_checks.results
+         | default([])
+         | selectattr('rc', 'eq', 0)
+         | map(attribute='item')
+         | list }}
+    hypr_debian_missing_packages: >-
+      {{ hypr_debian_package_checks.results
+         | default([])
+         | rejectattr('rc', 'eq', 0)
+         | map(attribute='item')
+         | list }}
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: "Hypr | Debian | Install available Hyprland packages"
+  ansible.builtin.apt:
+    name: "{{ hypr_debian_available_packages }}"
+    state: present
+  become: true
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - can_install_packages | default(false)
+    - not ansible_check_mode
+    - hypr_debian_available_packages | default([]) | length > 0
+
+- name: "Hypr | Check referenced commands"
+  ansible.builtin.command: "which {{ item }}"
+  loop: "{{ hypr_required_commands }}"
+  register: hypr_command_checks
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+- name: "Hypr | Check if Wayland sessions directory exists"
+  ansible.builtin.stat:
+    path: /usr/share/wayland-sessions
+  register: hypr_wayland_sessions_dir
+
+- name: "Hypr | Check if Hyprland session file exists"
+  ansible.builtin.stat:
+    path: /usr/share/wayland-sessions/hyprland.desktop
+  register: hypr_desktop_file
+  when: hypr_wayland_sessions_dir.stat.exists
+
+- name: "Hypr | Report installation status"
+  ansible.builtin.debug:
+    msg:
+      - "Hyprland desktop status:"
+      - "- Fedora COPR: {{ hypr_fedora_copr if ansible_facts['os_family'] == 'RedHat' else 'not used on this distro' }}"
+      - "- Fedora packages requested: {{ hypr_fedora_packages | join(', ') if ansible_facts['os_family'] == 'RedHat' else 'n/a' }}"
+      - "- Debian packages available: {{ hypr_debian_available_packages | default([]) | join(', ') if ansible_facts['os_family'] == 'Debian' else 'n/a' }}"
+      - "- Debian packages missing/skipped: {{ hypr_debian_missing_packages | default([]) | join(', ') if ansible_facts['os_family'] == 'Debian' else 'n/a' }}"
+      - "- Referenced commands missing: {{ (hypr_command_checks.results | rejectattr('rc', 'eq', 0) | map(attribute='item') | list | join(', ')) | default('none', true) }}"
+      - "- Wayland sessions available: {{ '✓' if (hypr_wayland_sessions_dir.stat.exists | default(false)) else '✗' }}"
+      - "- Hyprland.desktop found: {{ '✓' if (hypr_desktop_file.stat.exists | default(false)) else '✗' }}"
+      - "- Lua config note: .config/hypr/hyprland.lua requires a recent Hyprland build with Lua config support."
+      - ""
+      - "{{ 'Note: Log out and select Hyprland from the display manager to use this session.' if (hypr_desktop_file.stat.exists | default(false)) else 'Note: Install packages first, then select Hyprland from the display manager.' }}"
