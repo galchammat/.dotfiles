@@ -1,0 +1,10 @@
+
+# Machine-generated git settings written by the ansible git role.
+.config/git/config.local
+.config/git/allowed_signers
+
+# Written by lazy.nvim; machine-specific.
+.config/nvim/lazy-lock.json
+
+# Local python venv used to run molecule.
+.venv/

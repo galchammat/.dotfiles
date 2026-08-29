@@ -1,6 +1,6 @@
 # PATH
 path=(
-  /opt/nvim-linux-x86_64/bin
+  /opt/nvim/bin
   /usr/local/go/bin
   /home/yog404/.opencode/bin
   $HOME/go/bin
