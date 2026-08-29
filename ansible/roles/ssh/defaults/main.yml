@@ -1,0 +1,6 @@
+---
+# Trust the tailscale0 interface in firewalld so tailnet peers can reach sshd.
+# On Fedora, firewalld rejects inbound on tailscale0 by default, which surfaces
+# as "Connection refused" with no sshd log entry. Set to false on a host that
+# should not be reachable over the tailnet.
+trust_tailscale_ssh: true

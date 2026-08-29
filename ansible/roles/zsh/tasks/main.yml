@@ -84,13 +84,24 @@
   # shell settings, so strip any leftover block from untracked ~/.bashrc.
   when: zsh_path.stdout is defined
 
-- name: "Zsh | Remove any legacy handoff block from .bash_profile"
+- name: "Zsh | Hand off interactive login shells to zsh via .bash_profile"
   ansible.builtin.blockinfile:
     path: "{{ ansible_facts['user_dir'] }}/.bash_profile"
     marker: "# {mark} ANSIBLE MANAGED: zsh handoff"
-    state: absent
-  # Older versions of this role also wrote the hook into .bash_profile; keep the
-  # top-level tidy by removing it if present. Never creates the file.
+    create: true
+    mode: "0644"
+    block: |
+      # On accounts where chsh can't change the login shell (e.g. LDAP), hand off
+      # interactive login shells (SSH/TTY) to zsh. Guarded to interactive shells
+      # only, so non-interactive sessions (scp, rsync, git-over-ssh) are untouched.
+      if [ -z "$ZSH_VERSION" ] && command -v zsh >/dev/null 2>&1; then
+        case $- in
+          *i*) export SHELL="$(command -v zsh)"; exec zsh -l ;;
+        esac
+      fi
+  # Where chsh succeeded the login shell is already zsh and bash never reads this
+  # file, so the block is a harmless no-op; on chsh-less (LDAP) accounts it is the
+  # only way to land SSH/TTY logins in zsh. Idempotent via the managed markers.
   when: zsh_path.stdout is defined
 
 - name: "Zsh | Note about default shell"
@@ -100,11 +111,13 @@
       ✓ Login shell changed to zsh via chsh.
       {% elif chsh_result is defined and 'can only change local entries' in (chsh_result.stderr | default('')) %}
       ⚠️  This account is not a local /etc/passwd user (managed via systemd userdb /
-      sssd / LDAP), so chsh cannot change the login shell. Terminal emulators use
-      their own shell setting; on a bare TTY/SSH session run `exec zsh`.
+      sssd / LDAP), so chsh cannot change the login shell. Interactive SSH/TTY logins
+      auto-hand off to zsh via ~/.bash_profile; terminal emulators use their own
+      shell setting.
       {% elif current_shell.stdout != zsh_path.stdout | default('') and not (can_install_packages | default(false) and sudo_check.rc | default(1) == 0) %}
-      ⚠️  No passwordless sudo, so chsh was skipped. Terminal emulators use their
-      own shell setting; on a bare TTY/SSH session run `exec zsh`.
+      ⚠️  No passwordless sudo, so chsh was skipped. Interactive SSH/TTY logins
+      auto-hand off to zsh via ~/.bash_profile; terminal emulators use their own
+      shell setting.
       {% else %}
       ✓ zsh is already the login shell.
       {% endif %}
