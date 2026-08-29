@@ -10,7 +10,10 @@ on:
     workflows: [molecule, gitleaks]
     types: [completed]
 
-permissions: {}
+# actions:read lets the job query the failed run's jobs/steps and pull the
+# failed-step log excerpt via the GitHub API (gh). Nothing else is needed.
+permissions:
+  actions: read
 
 jobs:
   ping:
@@ -22,10 +25,11 @@ jobs:
     steps:
       - name: Post the failure to Discord
         env:
-          # Event fields are passed through the environment rather than
-          # interpolated into the script, so a crafted branch name cannot inject
-          # shell commands.
+          # Event/API fields are passed through the environment (and into jq via
+          # --arg), never interpolated into the script or the JSON body, so a
+          # crafted branch name or log line cannot inject shell or JSON.
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          GH_TOKEN: ${{ github.token }}
           WF_NAME: ${{ github.event.workflow_run.name }}
           WF_URL: ${{ github.event.workflow_run.html_url }}
           WF_BRANCH: ${{ github.event.workflow_run.head_branch }}
@@ -33,13 +37,49 @@ jobs:
           WF_ACTOR: ${{ github.event.workflow_run.actor.login }}
           WF_CONCL: ${{ github.event.workflow_run.conclusion }}
           WF_REPO: ${{ github.event.repository.full_name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           if [ -z "$DISCORD_WEBHOOK" ]; then
             echo "DISCORD_WEBHOOK secret is not set; skipping notification."
             exit 0
           fi
           short_sha=$(printf '%s' "$WF_SHA" | cut -c1-7)
-          content=$(printf '❌ **%s** %s\nrepo: `%s`  branch: `%s` (`%s`)\nby %s\n%s' \
+
+          # Which job(s) and step(s) actually failed. Best-effort: if the API
+          # call fails we still send the basic notification below.
+          detail=""
+          jobs_json=$(gh api "repos/$WF_REPO/actions/runs/$RUN_ID/jobs?per_page=100" 2>/dev/null || true)
+          if [ -n "$jobs_json" ]; then
+            detail=$(printf '%s' "$jobs_json" | jq -r '
+              [ .jobs[]? | select(.conclusion == "failure")
+                | "• job: " + .name
+                  + ( [ .steps[]? | select(.conclusion == "failure")
+                        | "\n    ↳ step: " + .name ] | add // "" )
+              ] | join("\n")' 2>/dev/null || true)
+          fi
+
+          # A short excerpt from the failed step logs, so the alert carries the
+          # actual error and not just a link. Trimmed hard to respect Discord's
+          # 2000-char message limit.
+          log_excerpt=$(gh run view "$RUN_ID" --repo "$WF_REPO" --log-failed 2>/dev/null \
+            | grep -vaE '^[[:space:]]*$' \
+            | sed -E 's/^[^ ]+\t[^ ]+\t//' \
+            | tail -n 12 \
+            | cut -c1-180 \
+            | tail -c 900 || true)
+
+          # Angle brackets around the URL tell Discord NOT to render a link
+          # preview/embed for it.
+          content=$(printf '❌ **%s** %s\nrepo: `%s`  branch: `%s` (`%s`)\nby %s\nrun: <%s>' \
             "$WF_NAME" "$WF_CONCL" "$WF_REPO" "$WF_BRANCH" "$short_sha" "$WF_ACTOR" "$WF_URL")
+          if [ -n "$detail" ]; then
+            content=$(printf '%s\n**failed:**\n%s' "$content" "$detail")
+          fi
+          if [ -n "$log_excerpt" ]; then
+            content=$(printf '%s\n```\n%s\n```' "$content" "$log_excerpt")
+          fi
+          # Final guard: keep the whole payload comfortably under 2000 chars.
+          content=$(printf '%s' "$content" | head -c 1900)
+
           jq -n --arg c "$content" '{content: $c}' \
             | curl -sfS -H "Content-Type: application/json" -X POST -d @- "$DISCORD_WEBHOOK"
