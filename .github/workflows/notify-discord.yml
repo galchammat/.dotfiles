@@ -1,0 +1,45 @@
+name: notify-discord
+# Central failure funnel: pings a Discord webhook whenever one of the listed
+# workflows finishes in a failed/timed-out state. Silent on success. To funnel
+# a NEW workflow's failures, add its `name:` to the `workflows:` list below.
+#
+# This listener runs from the copy of this file on the default branch, so it
+# only starts funnelling after it is merged to main.
+on:
+  workflow_run:
+    workflows: [molecule, gitleaks]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    # Silent on success: only fire for genuine failures, not cancelled/skipped.
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' ||
+      github.event.workflow_run.conclusion == 'timed_out'
+    steps:
+      - name: Post the failure to Discord
+        env:
+          # Event fields are passed through the environment rather than
+          # interpolated into the script, so a crafted branch name cannot inject
+          # shell commands.
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          WF_NAME: ${{ github.event.workflow_run.name }}
+          WF_URL: ${{ github.event.workflow_run.html_url }}
+          WF_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WF_SHA: ${{ github.event.workflow_run.head_sha }}
+          WF_ACTOR: ${{ github.event.workflow_run.actor.login }}
+          WF_CONCL: ${{ github.event.workflow_run.conclusion }}
+          WF_REPO: ${{ github.event.repository.full_name }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "DISCORD_WEBHOOK secret is not set; skipping notification."
+            exit 0
+          fi
+          short_sha=$(printf '%s' "$WF_SHA" | cut -c1-7)
+          content=$(printf '❌ **%s** %s\nrepo: `%s`  branch: `%s` (`%s`)\nby %s\n%s' \
+            "$WF_NAME" "$WF_CONCL" "$WF_REPO" "$WF_BRANCH" "$short_sha" "$WF_ACTOR" "$WF_URL")
+          jq -n --arg c "$content" '{content: $c}' \
+            | curl -sfS -H "Content-Type: application/json" -X POST -d @- "$DISCORD_WEBHOOK"

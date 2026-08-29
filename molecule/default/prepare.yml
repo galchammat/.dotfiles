@@ -31,6 +31,20 @@
         mode: '0440'
         validate: /usr/sbin/visudo -csf %s
 
+    # A stock Fedora image's /etc/pam.d/sudo pulls in system-auth (pam_unix /
+    # faillock account checks) which fails inside an unprivileged container with
+    # "PAM account management error: cannot retrieve authentication info". This
+    # only breaks sudo in the sandbox, not on a real machine, so give the
+    # container a permissive sudo PAM stack purely so `become` can escalate.
+    - name: Make sudo escalation work inside the container (permissive PAM)
+      ansible.builtin.copy:
+        dest: /etc/pam.d/sudo
+        content: |
+          auth       sufficient pam_permit.so
+          account    sufficient pam_permit.so
+          session    sufficient pam_permit.so
+        mode: '0644'
+
     - name: Confirm the machine starts without the tools the playbook installs
       ansible.builtin.command:
         cmd: sh -c 'command -v nvim tmux zsh alacritty'
