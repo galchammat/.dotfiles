@@ -9,7 +9,7 @@ driver:
   name: podman
 platforms:
   - name: dotfiles
-    image: quay.io/fedora/fedora:41
+    image: quay.io/fedora/fedora:44
     # A stock Fedora image already has everything a new machine would; the
     # playbook is supposed to install the rest itself.
     pre_build_image: true
