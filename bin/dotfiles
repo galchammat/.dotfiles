@@ -473,7 +473,6 @@ if ! [[ -d "$DOTFILES_GIT" ]]; then
   _cmd "git clone --bare --quiet https://github.com/galchammat/.dotfiles.git $DOTFILES_GIT"
   __task "Checking out dotfiles to home directory"
   _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME checkout -f '$DOTFILES_BRANCH'"
-  _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME config --local status.showUntrackedFiles no"
   _task_done
 else
   # .config/gh/hosts.yml used to be tracked, but `gh auth login` writes a live
@@ -513,6 +512,13 @@ else
     _task_done
   fi
 fi
+
+# The work tree is the whole home directory, so without this every file in
+# $HOME that is not tracked shows up in `git status`. Applied on every run
+# rather than only at clone time: it was previously set once during the initial
+# clone, so a repo cloned any other way, or one where the setting was lost,
+# reported ~50 untracked entries forever.
+_cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME config --local status.showUntrackedFiles no"
 
 if [[ "${CLONE_ONLY:-}" == "true" ]]; then
   echo -e "${CHECK_MARK} ${CAT_GREEN}Repository ready at ${DOTFILES_GIT}${NC}"
