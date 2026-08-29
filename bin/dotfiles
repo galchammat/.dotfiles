@@ -691,6 +691,16 @@ if [[ -s "$NEXT_STEPS" ]]; then
   echo -e "      ${CAT_SUBTEXT1}These need a browser or your input, so they are not automated.${NC}"
   echo -e "      ${CAT_SUBTEXT1}Re-run ${CAT_TEAL}dotfiles${CAT_SUBTEXT1} afterwards to finish anything that depended on them.${NC}"
   echo ""
+  # gh only exists here to upload the key, and the GitHub API always needs a
+  # token: SSH keys authenticate git, not the API. Pushing, pulling and commit
+  # signing all work from the key alone, so gh can be skipped entirely.
+  if [[ -f "$HOME/.ssh/id_ed25519.pub" ]]; then
+    echo -e "      ${CAT_SUBTEXT1}Or skip ${CAT_TEAL}gh${CAT_SUBTEXT1} and the token altogether: paste this key at${NC}"
+    echo -e "      ${CAT_TEAL}https://github.com/settings/ssh/new${NC}"
+    echo ""
+    echo -e "      ${CAT_SUBTEXT0}$(cat "$HOME/.ssh/id_ed25519.pub")${NC}"
+    echo ""
+  fi
 fi
 
 if ! [[ -f "$IS_FIRST_RUN" ]]; then
