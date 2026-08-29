@@ -11,6 +11,12 @@ on:
 permissions:
   contents: read
 
+# A new push to the same branch/PR cancels an in-flight run, so two quick
+# pushes don't tie up a 15-minute job twice.
+concurrency:
+  group: molecule-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
