@@ -1,0 +1,141 @@
+---
+# Tailscale setup, split into two parts:
+#
+#   * INTERACTIVE setup (install + `tailscale up`) is tagged `never`, so it is
+#     held out of the full playbook and only runs when driven explicitly:
+#         dotfiles --tailscale        (ansible-playbook ... --tags tailscale)
+#     `tailscale up` may print a browser login URL, exactly like the github role.
+#
+#   * FIREWALL trust + verification run in BOTH the full playbook and the
+#     --tailscale run (no `never` tag). They are gated on the tailscale0
+#     interface existing and firewalld being active, so they are a no-op in CI
+#     and on hosts without Tailscale.
+#
+# The --tailscale command therefore brings the tailnet up and then double-checks
+# that firewalld actually accepts it.
+
+# ---------------------------------------------------------------------------
+# INTERACTIVE: install Tailscale and bring the tailnet up (driven by --tailscale)
+# ---------------------------------------------------------------------------
+- name: "Tailscale | Setup (interactive)"
+  tags: [never]
+  block:
+    - name: "Tailscale | Fedora | Add the Tailscale package repository"
+      ansible.builtin.get_url:
+        url: "{{ tailscale_fedora_repo_url }}"
+        dest: /etc/yum.repos.d/tailscale.repo
+        mode: "0644"
+      become: true
+      when:
+        - ansible_facts['os_family'] == 'RedHat'
+        - not ansible_check_mode
+
+    - name: "Tailscale | Install the tailscale package"
+      ansible.builtin.package:
+        name: tailscale
+        state: present
+      become: true
+      when: not ansible_check_mode
+
+    - name: "Tailscale | Enable and start tailscaled"
+      ansible.builtin.systemd:
+        name: tailscaled
+        enabled: true
+        state: started
+      become: true
+      when: not ansible_check_mode
+
+    - name: "Tailscale | Check current backend state"
+      ansible.builtin.command: tailscale status --json
+      register: tailscale_status
+      changed_when: false
+      failed_when: false
+      when: not ansible_check_mode
+
+    - name: "Tailscale | Determine whether the tailnet is already up"
+      ansible.builtin.set_fact:
+        tailscale_backend_state: >-
+          {{ (tailscale_status.stdout | from_json).BackendState | default('')
+             if (tailscale_status.rc | default(1)) == 0 else '' }}
+      when: not ansible_check_mode
+
+    - name: "Tailscale | Bring the tailnet up (may prompt for browser login)"
+      # Plain `tailscale up` (no tailnet-SSH) per the user's setup. If the node
+      # is unauthenticated it prints a login URL and waits, like the github
+      # device flow. Skipped when already Running so re-runs are idempotent.
+      ansible.builtin.command: tailscale up
+      become: true
+      register: tailscale_up
+      changed_when: tailscale_up.rc == 0
+      when:
+        - not ansible_check_mode
+        - tailscale_backend_state | default('') != 'Running'
+
+# ---------------------------------------------------------------------------
+# FIREWALL: trust tailscale0 and verify acceptance (full playbook + --tailscale)
+# ---------------------------------------------------------------------------
+- name: "Tailscale | Check for the tailscale0 interface"
+  ansible.builtin.stat:
+    path: /sys/class/net/tailscale0
+  register: tailscale_iface
+
+- name: "Tailscale | Check whether firewalld is active"
+  ansible.builtin.command: systemctl is-active firewalld
+  register: firewalld_active
+  changed_when: false
+  failed_when: false
+  when:
+    - trust_tailscale_ssh | bool
+    - tailscale_iface.stat.exists
+
+- name: "Tailscale | Check whether tailscale0 is already trusted"
+  ansible.builtin.command: firewall-cmd --permanent --zone=trusted --query-interface=tailscale0
+  register: ts_trusted
+  changed_when: false
+  failed_when: false
+  become: true
+  when:
+    - trust_tailscale_ssh | bool
+    - tailscale_iface.stat.exists
+    - firewalld_active.stdout | default('') == 'active'
+
+- name: "Tailscale | Trust tailscale0 in the firewalld trusted zone"
+  ansible.builtin.command: firewall-cmd --permanent --zone=trusted --add-interface=tailscale0
+  become: true
+  register: ts_trust_added
+  when:
+    - trust_tailscale_ssh | bool
+    - tailscale_iface.stat.exists
+    - firewalld_active.stdout | default('') == 'active'
+    - ts_trusted.rc | default(1) != 0
+
+- name: "Tailscale | Reload firewalld to apply the trusted interface"
+  ansible.builtin.command: firewall-cmd --reload
+  become: true
+  changed_when: true
+  when: ts_trust_added is defined and ts_trust_added is changed
+
+- name: "Tailscale | Verify tailscale0 is accepted by firewalld"
+  ansible.builtin.command: firewall-cmd --zone=trusted --query-interface=tailscale0
+  register: ts_trust_verify
+  changed_when: false
+  failed_when: false
+  become: true
+  when:
+    - trust_tailscale_ssh | bool
+    - tailscale_iface.stat.exists
+    - firewalld_active.stdout | default('') == 'active'
+
+- name: "Tailscale | Report firewall acceptance"
+  ansible.builtin.debug:
+    msg: >-
+      {% if not tailscale_iface.stat.exists %}
+      ℹ️  tailscale0 not present yet — run `dotfiles --tailscale` to bring the tailnet up.
+      {% elif firewalld_active.stdout | default('') != 'active' %}
+      ℹ️  firewalld is not active; no firewall change needed for tailnet SSH.
+      {% elif (ts_trust_verify.rc | default(1)) == 0 %}
+      ✓ tailscale0 is trusted in firewalld — tailnet SSH is allowed.
+      {% else %}
+      ⚠️  tailscale0 is NOT trusted in firewalld — tailnet SSH may be refused.
+      {% endif %}
+  when: trust_tailscale_ssh | bool

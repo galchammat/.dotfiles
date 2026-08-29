@@ -135,6 +135,7 @@ show_help() {
   echo -e "    ${CAT_GREEN}--uninstall <role>${NC}      Uninstall a role (cleanup only)"
   echo -e "    ${CAT_GREEN}--delete <role>${NC}         Uninstall and delete a role from dotfiles"
   echo -e "    ${CAT_GREEN}--git${NC}                   Register your SSH key on GitHub (interactive, one-time)"
+  echo -e "    ${CAT_GREEN}--tailscale${NC}             Bring up Tailscale and allow tailnet SSH (interactive)"
   echo -e "    ${CAT_GREEN}--clone-only${NC}            Clone/update the repo only, skip packages and ansible"
   echo -e "    ${CAT_GREEN}-v, -vv, -vvv${NC}           Verbose mode (passed to ansible-playbook)"
   echo ""
@@ -156,6 +157,9 @@ show_help() {
   echo ""
   echo -e "    ${CAT_SUBTEXT1}# One-time: log in to GitHub and upload your SSH key (auth + signing)${NC}"
   echo "    dotfiles --git"
+  echo ""
+  echo -e "    ${CAT_SUBTEXT1}# Bring up Tailscale, then verify firewalld accepts tailnet SSH${NC}"
+  echo "    dotfiles --tailscale"
   echo ""
   echo -e "${CAT_BLUE}ANSIBLE ARGUMENTS:${NC}"
   echo "    All arguments not recognized by dotfiles are passed to ansible-playbook."
@@ -553,6 +557,10 @@ while [[ $# -gt 0 ]]; do
       GITHUB_SETUP=true
       shift
       ;;
+    --tailscale)
+      TAILSCALE_SETUP=true
+      shift
+      ;;
     *)
       REMAINING_ARGS+=("$1")
       shift
@@ -683,6 +691,18 @@ if [[ "$GITHUB_SETUP" == true ]]; then
   ansible-playbook "$HOME/ansible/playbook.yml" \
     -i "$HOME/ansible/hosts" \
     --tags github-setup \
+    "${REMAINING_ARGS[@]}"
+  exit $?
+fi
+
+# Interactive Tailscale setup: install, `tailscale up` (may print a login URL),
+# then trust tailscale0 in firewalld and verify tailnet SSH is accepted. Needs
+# sudo for the repo/service/firewall steps, so --ask-become-pass is passed.
+if [[ "$TAILSCALE_SETUP" == true ]]; then
+  ansible-playbook "$HOME/ansible/playbook.yml" \
+    -i "$HOME/ansible/hosts" \
+    --ask-become-pass \
+    --tags tailscale \
     "${REMAINING_ARGS[@]}"
   exit $?
 fi

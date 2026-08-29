@@ -4,3 +4,6 @@
 # as "Connection refused" with no sshd log entry. Set to false on a host that
 # should not be reachable over the tailnet.
 trust_tailscale_ssh: true
+
+# URL of the Tailscale dnf repo definition (Fedora/RHEL).
+tailscale_fedora_repo_url: https://pkgs.tailscale.com/stable/fedora/tailscale.repo
