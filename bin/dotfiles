@@ -134,6 +134,7 @@ show_help() {
   echo -e "    ${CAT_GREEN}--version${NC}               Show version information"
   echo -e "    ${CAT_GREEN}--uninstall <role>${NC}      Uninstall a role (cleanup only)"
   echo -e "    ${CAT_GREEN}--delete <role>${NC}         Uninstall and delete a role from dotfiles"
+  echo -e "    ${CAT_GREEN}--github-setup${NC}          Register your SSH key on GitHub (interactive, one-time)"
   echo -e "    ${CAT_GREEN}--clone-only${NC}            Clone/update the repo only, skip packages and ansible"
   echo -e "    ${CAT_GREEN}-v, -vv, -vvv${NC}           Verbose mode (passed to ansible-playbook)"
   echo ""
@@ -152,6 +153,9 @@ show_help() {
   echo ""
   echo -e "    ${CAT_SUBTEXT1}# Delete a role completely${NC}"
   echo "    dotfiles --delete old_role"
+  echo ""
+  echo -e "    ${CAT_SUBTEXT1}# One-time: log in to GitHub and upload your SSH key (auth + signing)${NC}"
+  echo "    dotfiles --github-setup"
   echo ""
   echo -e "${CAT_BLUE}ANSIBLE ARGUMENTS:${NC}"
   echo "    All arguments not recognized by dotfiles are passed to ansible-playbook."
@@ -516,6 +520,7 @@ fi
 # Parse arguments for uninstall/delete
 UNINSTALL_ROLE=""
 DELETE_ROLE=""
+GITHUB_SETUP=""
 REMAINING_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -543,6 +548,10 @@ while [[ $# -gt 0 ]]; do
       fi
       DELETE_ROLE="$2"
       shift 2
+      ;;
+    --github-setup)
+      GITHUB_SETUP=true
+      shift
       ;;
     *)
       REMAINING_ARGS+=("$1")
@@ -665,6 +674,19 @@ if [[ -n "$DELETE_ROLE" ]]; then
 fi
 
 _task_done
+
+# One-time, interactive GitHub account setup: browser device-flow login, then
+# upload the ed25519 key as both an authentication and a signing key. The role
+# is held out of a normal run by its `never` tag, so it only runs when asked
+# for explicitly here. No --ask-become-pass: it is entirely user-level (gh).
+if [[ "$GITHUB_SETUP" == true ]]; then
+  ansible-playbook "$HOME/ansible/playbook.yml" \
+    -i "$HOME/ansible/hosts" \
+    --tags github-setup \
+    "${REMAINING_ARGS[@]}"
+  exit $?
+fi
+
 ansible-playbook "$HOME/ansible/playbook.yml" \
   -i "$HOME/ansible/hosts" \
   --ask-become-pass \
