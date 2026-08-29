@@ -67,18 +67,14 @@
     - not ansible_check_mode
     - node_version.stdout is defined
 
-- name: "NVM | Ensure NVM is sourced in .zshrc"
-  ansible.builtin.blockinfile:
-    path: "{{ ansible_facts['user_dir'] }}/.zshrc"
-    marker: "# {mark} ANSIBLE MANAGED BLOCK - NVM"
-    block: |
-      # NVM - Node Version Manager
-      export NVM_DIR="$HOME/.nvm"
-      [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-      [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-    create: false
-    insertafter: EOF
-  when: ansible_facts['user_shell'] is search('zsh')
+# ~/.zshrc is tracked in this repo, so a blockinfile here leaves the work tree
+# permanently dirty and makes the next `git pull` autostash around it. It is
+# also unnecessary: .zshenv sources ~/.config/zsh/*.zsh, where 00-env.zsh
+# exports NVM_DIR and 90-tools.zsh sources nvm.sh already.
+#
+# The task was previously masked on a first run, because it is gated on the
+# user's shell already being zsh, which only becomes true after the zsh role
+# runs chsh. It then dirtied the repo on every subsequent run.
 
 - name: "NVM | Ensure NVM is sourced in .bashrc"
   ansible.builtin.blockinfile:
