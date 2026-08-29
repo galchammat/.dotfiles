@@ -75,7 +75,7 @@
 
 - name: "Zsh | Install oh-my-zsh"
   ansible.builtin.shell: |
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended --keep-zshrc
   args:
     creates: "{{ ansible_facts['user_dir'] }}/.oh-my-zsh"
   when:

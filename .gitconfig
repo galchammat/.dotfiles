@@ -43,3 +43,8 @@
 	# while fetches stay anonymous. Plain insteadOf would rewrite both and put
 	# the chicken-and-egg problem straight back.
 	pushInsteadOf = https://github.com/
+[include]
+	# Machine-generated settings (identity, signing key) written by the ansible
+	# git role. Keeping them out of this tracked file stops every run from
+	# dirtying the work tree, which would break the `git pull` on the next run.
+	path = ~/.config/git/config.local

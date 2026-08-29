@@ -70,11 +70,12 @@ RIGHT_ANGLE="${GREEN}\xE2\x88\x9F${NC}"
 
 set -e
 
-# Check for tput (required for cursor control)
+# tput drives the spinner and cursor control. It comes from ncurses, which a
+# minimal install may not ship. It is purely cosmetic, so rather than refusing
+# to run, fall back to a no-op and carry on: an installer should not die over
+# progress animation. The OS setup below installs ncurses where it can.
 if ! command -v tput &> /dev/null; then
-  echo -e "${CAT_RED}Error: 'tput' is required but not found.${NC}"
-  echo -e "${CAT_SUBTEXT1}Please install ncurses (Ubuntu: apt install ncurses-bin, Arch: pacman -S ncurses)${NC}"
-  exit 1
+  tput() { :; }
 fi
 
 # Early check for help/version flags (before setup)
@@ -85,6 +86,12 @@ for arg in "$@"; do
       ;;
     --version)
       SHOW_VERSION=true
+      ;;
+    --clone-only)
+      # Fetch/update the repository and exit without installing packages or
+      # running ansible. Used to regression test the clone on a machine that
+      # has no credentials of any kind.
+      CLONE_ONLY=true
       ;;
   esac
 done
@@ -109,6 +116,9 @@ DOTFILES_GIT="$HOME/.dotfiles.git"
 DOTFILES_DIR="$HOME"
 IS_FIRST_RUN="$HOME/.dotfiles_run"
 DOTFILES_VERSION="1.0.0"
+# Branch to install from. Override to bootstrap from a feature branch:
+#   DOTFILES_BRANCH=my-branch bash -c "$(curl -fsSL .../bin/dotfiles)"
+DOTFILES_BRANCH="${DOTFILES_BRANCH:-main}"
 # Spinner PID tracking
 SPINNER_PID=""
 
@@ -124,6 +134,7 @@ show_help() {
   echo -e "    ${CAT_GREEN}--version${NC}               Show version information"
   echo -e "    ${CAT_GREEN}--uninstall <role>${NC}      Uninstall a role (cleanup only)"
   echo -e "    ${CAT_GREEN}--delete <role>${NC}         Uninstall and delete a role from dotfiles"
+  echo -e "    ${CAT_GREEN}--clone-only${NC}            Clone/update the repo only, skip packages and ansible"
   echo -e "    ${CAT_GREEN}-v, -vv, -vvv${NC}           Verbose mode (passed to ansible-playbook)"
   echo ""
   echo -e "${CAT_BLUE}EXAMPLES:${NC}"
@@ -265,6 +276,17 @@ ubuntu_setup() {
     source /etc/os-release
   fi
 
+  if ! [ -x "$(command -v tput)" ]; then
+    _cmd "sudo apt update"
+    _cmd "sudo apt install -y ncurses-bin"
+    unset -f tput 2>/dev/null || true
+  fi
+  if ! [ -x "$(command -v git)" ]; then
+    __task "Installing Git"
+    _cmd "sudo apt update"
+    _cmd "sudo apt install -y git"
+  fi
+
   if ! dpkg -s ansible >/dev/null 2>&1; then
     __task "Installing Ansible (This may take a few minutes)"
     _cmd "sudo apt update"
@@ -291,6 +313,16 @@ ubuntu_setup() {
 }
 
 arch_setup() {
+  if ! [ -x "$(command -v tput)" ]; then
+    _cmd "sudo pacman -Sy --noconfirm"
+    _cmd "sudo pacman -S --noconfirm ncurses"
+    unset -f tput 2>/dev/null || true
+  fi
+  if ! [ -x "$(command -v git)" ]; then
+    __task "Installing Git"
+    _cmd "sudo pacman -Sy --noconfirm"
+    _cmd "sudo pacman -S --noconfirm git"
+  fi
   if ! [ -x "$(command -v ansible)" ]; then
     __task "Installing Ansible (This may take a few minutes)"
     _cmd "sudo pacman -Sy --noconfirm"
@@ -321,6 +353,17 @@ arch_setup() {
 }
 
 fedora_setup() {
+  # ncurses provides tput (the spinner) and git clones this repo a few lines
+  # below. Both are needed before ansible ever runs, so they cannot wait for
+  # the packages role.
+  if ! [ -x "$(command -v tput)" ]; then
+    _cmd "sudo dnf install -y ncurses"
+    unset -f tput 2>/dev/null || true
+  fi
+  if ! [ -x "$(command -v git)" ]; then
+    __task "Installing Git"
+    _cmd "sudo dnf install -y git"
+  fi
   if ! [ -x "$(command -v ansible)" ]; then
     __task "Installing Ansible (This may take a few minutes)"
     _cmd "sudo dnf install -y ansible"
@@ -429,10 +472,26 @@ if ! [[ -d "$DOTFILES_GIT" ]]; then
   __task "Downloading dotfiles repository (This may take a minute)"
   _cmd "git clone --bare --quiet https://github.com/galchammat/.dotfiles.git $DOTFILES_GIT"
   __task "Checking out dotfiles to home directory"
-  _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME checkout -f"
+  _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME checkout -f '$DOTFILES_BRANCH'"
   _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME config --local status.showUntrackedFiles no"
   _task_done
 else
+  # .config/gh/hosts.yml used to be tracked, but `gh auth login` writes a live
+  # OAuth token into it, so it is untracked now. On a machine provisioned
+  # before that change the local copy holds a token and differs from HEAD,
+  # which would collide with pulling the removal. Set it aside, let the pull
+  # remove the tracked copy cleanly, and put the token back afterwards as an
+  # untracked file.
+  GH_HOSTS="$HOME/.config/gh/hosts.yml"
+  GH_HOSTS_BAK=""
+  if git --git-dir="$DOTFILES_GIT" --work-tree="$HOME" ls-files --error-unmatch .config/gh/hosts.yml >/dev/null 2>&1; then
+    __task "Preserving GitHub CLI credentials while they are untracked"
+    GH_HOSTS_BAK="$(mktemp)"
+    _cmd "cp '$GH_HOSTS' '$GH_HOSTS_BAK'"
+    _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME checkout -- .config/gh/hosts.yml"
+    _task_done
+  fi
+
   # A repo cloned by the old script has an SSH remote, so `pull` would still
   # need a key and an unlocked agent. Point it at HTTPS; pushes are unaffected
   # because .gitconfig rewrites the push URL back to SSH.
@@ -441,9 +500,23 @@ else
     _cmd "git --git-dir=$DOTFILES_GIT remote set-url origin https://github.com/galchammat/.dotfiles.git"
     _task_done
   fi
+
   __task "Updating dotfiles repository"
   _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME pull --quiet"
   _task_done
+
+  if [[ -n "$GH_HOSTS_BAK" ]]; then
+    __task "Restoring GitHub CLI credentials"
+    _cmd "mkdir -p '$(dirname "$GH_HOSTS")'"
+    _cmd "mv '$GH_HOSTS_BAK' '$GH_HOSTS'"
+    _cmd "chmod 600 '$GH_HOSTS'"
+    _task_done
+  fi
+fi
+
+if [[ "${CLONE_ONLY:-}" == "true" ]]; then
+  echo -e "${CHECK_MARK} ${CAT_GREEN}Repository ready at ${DOTFILES_GIT}${NC}"
+  exit 0
 fi
 
 # Parse arguments for uninstall/delete
@@ -602,6 +675,23 @@ ansible-playbook "$HOME/ansible/playbook.yml" \
   -i "$HOME/ansible/hosts" \
   --ask-become-pass \
   "${REMAINING_ARGS[@]}"
+
+# Steps that need a human are collected by the roles rather than run inline, so
+# the playbook never blocks. Print them last, where they will not scroll away.
+NEXT_STEPS="$HOME/.dotfiles-next-steps"
+if [[ -s "$NEXT_STEPS" ]]; then
+  echo ""
+  echo -e "${BOOK} ${CAT_YELLOW}Finish setup by running:${NC}"
+  echo ""
+  while IFS= read -r step; do
+    [[ -z "$step" ]] && continue
+    echo -e "    ${CAT_TEAL}${step}${NC}"
+  done < "$NEXT_STEPS"
+  echo ""
+  echo -e "      ${CAT_SUBTEXT1}These need a browser or your input, so they are not automated.${NC}"
+  echo -e "      ${CAT_SUBTEXT1}Re-run ${CAT_TEAL}dotfiles${CAT_SUBTEXT1} afterwards to finish anything that depended on them.${NC}"
+  echo ""
+fi
 
 if ! [[ -f "$IS_FIRST_RUN" ]]; then
   echo ""
