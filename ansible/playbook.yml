@@ -7,6 +7,11 @@
     - { role: nvm, tags: ["nvm"]}
     - { role: packages, tags: ["packages"] }
     - { role: ssh, tags: ["ssh"]}
+    # Remote access over Tailscale. The firewall-trust tasks run in a normal run
+    # (gated on the tailscale0 interface); the interactive install + `tailscale
+    # up` are `never`-tagged inside the role, so bring the tailnet up with:
+    #   dotfiles --tailscale   (ansible-playbook playbook.yml --tags tailscale)
+    - { role: tailscale, tags: ["tailscale"]}
     - { role: fonts, tags: ["fonts"] }
     - { role: zsh, tags: ["zsh"]}
     - { role: i3, tags: ["i3"]}
