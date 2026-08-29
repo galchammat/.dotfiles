@@ -1,0 +1,44 @@
+---
+- name: Prepare a factory-fresh Fedora machine
+  hosts: all
+  gather_facts: false
+  tasks:
+    # Deliberately minimal. bin/dotfiles bootstraps ansible itself on a real
+    # machine; here the container runs the playbook locally, so ansible has to
+    # be present up front. Everything the roles need (compilers, alacritty,
+    # fonts, ...) is left for the playbook to install, which is the point.
+    - name: Install the minimum needed to run the playbook locally
+      ansible.builtin.raw: >
+        dnf install -y -q python3 sudo shadow-utils git ansible
+        fontconfig procps-ng findutils tar
+      changed_when: false
+
+    - name: Gather facts now that python is available
+      ansible.builtin.setup:
+
+    - name: Create the unprivileged workstation user
+      ansible.builtin.user:
+        name: tester
+        shell: /bin/bash
+        create_home: true
+
+    # The playbook always runs with become; sudo is passwordless here so the
+    # unattended run never blocks on a password prompt.
+    - name: Grant passwordless sudo
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/tester
+        content: "tester ALL=(ALL) NOPASSWD: ALL\n"
+        mode: '0440'
+        validate: /usr/sbin/visudo -csf %s
+
+    - name: Confirm the machine starts without the tools the playbook installs
+      ansible.builtin.command:
+        cmd: sh -c 'command -v nvim tmux zsh alacritty'
+      register: preinstalled
+      changed_when: false
+      failed_when: false
+
+    - name: Assert a genuinely factory-fresh starting point
+      ansible.builtin.assert:
+        that: preinstalled.rc != 0
+        fail_msg: "Base image already provides: {{ preinstalled.stdout }}"

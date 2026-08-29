@@ -1,0 +1,126 @@
+---
+- name: Verify the machine the playbook produced
+  hosts: all
+  gather_facts: true
+  vars:
+    ansible_user: tester
+    home: "{{ ansible_facts['user_dir'] }}"
+  tasks:
+    - name: Load the pinned neovim version the packages role uses
+      ansible.builtin.include_vars:
+        file: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/ansible/roles/packages/defaults/main.yml"
+
+    # --- the tools every later step depends on are installed -----------------
+    - name: Check each required command resolves
+      ansible.builtin.command:
+        cmd: sh -c 'command -v {{ item }}'
+      register: cmd_check
+      changed_when: false
+      failed_when: false
+      loop: [nvim, tmux, zsh, git, gh, rg, unzip, curl, alacritty, just, pass]
+
+    - name: Assert every required command is installed
+      ansible.builtin.assert:
+        that: item.rc == 0
+        fail_msg: "'{{ item.item }}' is missing after a full install."
+      loop: "{{ cmd_check.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # --- neovim is the pinned prebuilt release, linked onto PATH -------------
+    - name: Read the installed neovim version
+      ansible.builtin.command: nvim --version
+      register: nvim_ver
+      changed_when: false
+
+    - name: Assert neovim is the pinned version
+      ansible.builtin.assert:
+        that: "'NVIM ' ~ neovim_version == (nvim_ver.stdout_lines | first | trim)"
+        fail_msg: >-
+          Expected NVIM {{ neovim_version }}, got
+          '{{ nvim_ver.stdout_lines | first | trim }}'.
+
+    # --- nvm is installed and wired into bash --------------------------------
+    - name: Stat the nvm entry point
+      ansible.builtin.stat:
+        path: "{{ home }}/.nvm/nvm.sh"
+      register: nvm_sh
+
+    - name: Assert nvm is installed
+      ansible.builtin.assert:
+        that: nvm_sh.stat.exists
+        fail_msg: "~/.nvm/nvm.sh is missing, so nvm did not install."
+
+    - name: Read .bashrc
+      ansible.builtin.slurp:
+        src: "{{ home }}/.bashrc"
+      register: bashrc
+
+    - name: Assert the nvm block was added to .bashrc
+      ansible.builtin.assert:
+        that: (bashrc.content | b64decode) is search('ANSIBLE MANAGED BLOCK - NVM')
+        fail_msg: "The nvm block was not written into ~/.bashrc."
+
+    # --- oh-my-zsh installed without clobbering the shell config ------------
+    - name: Stat the oh-my-zsh directory
+      ansible.builtin.stat:
+        path: "{{ home }}/.oh-my-zsh"
+      register: omz
+
+    - name: Assert oh-my-zsh is installed
+      ansible.builtin.assert:
+        that: omz.stat.exists
+        fail_msg: "~/.oh-my-zsh is missing, so oh-my-zsh did not install."
+
+    # --- the ssh identity exists for signing / auth --------------------------
+    - name: Stat the ed25519 key pair
+      ansible.builtin.stat:
+        path: "{{ home }}/{{ item }}"
+      register: sshkey
+      loop:
+        - .ssh/id_ed25519
+        - .ssh/id_ed25519.pub
+
+    - name: Assert both halves of the key exist
+      ansible.builtin.assert:
+        that: item.stat.exists
+        fail_msg: "~/{{ item.item }} was not generated."
+      loop: "{{ sshkey.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # --- git signing is configured in the machine-local file, not ~/.gitconfig
+    - name: Read the machine-local git config
+      ansible.builtin.slurp:
+        src: "{{ home }}/.config/git/config.local"
+      register: git_local
+
+    - name: Assert commit signing is wired to the ssh key
+      ansible.builtin.assert:
+        that:
+          - (git_local.content | b64decode) is search('gpgsign = [Tt]rue')
+          - (git_local.content | b64decode) is search('format = ssh')
+          - (git_local.content | b64decode) is search('id_ed25519.pub')
+        fail_msg: >-
+          ~/.config/git/config.local does not configure SSH commit signing.
+
+    # The identity must land in config.local, never in the tracked ~/.gitconfig,
+    # or the working tree is left dirty and the next `git pull` autostashes.
+    - name: Read the tracked git config if the playbook checked it out
+      ansible.builtin.stat:
+        path: "{{ home }}/.gitconfig"
+      register: tracked_gitconfig
+
+    - name: Assert identity did not leak into a tracked ~/.gitconfig
+      ansible.builtin.command:
+        cmd: git config --file {{ home }}/.gitconfig --get user.signingkey
+      register: leaked_key
+      changed_when: false
+      failed_when: false
+      when: tracked_gitconfig.stat.exists
+
+    - name: Fail if the signing key was written to ~/.gitconfig
+      ansible.builtin.assert:
+        that: leaked_key.stdout | default('') | length == 0
+        fail_msg: "user.signingkey leaked into the tracked ~/.gitconfig."
+      when: tracked_gitconfig.stat.exists
