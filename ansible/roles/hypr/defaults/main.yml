@@ -1,14 +1,16 @@
 ---
 # Hyprland's Lua configuration support is recent, and the user's tracked
 # .config/hypr/hyprland.lua depends on it. Fedora's base repositories can lag
-# behind Hyprland releases, so Fedora enables this COPR to prefer current
-# Hyprland ecosystem packages while keeping installation idempotent.
+# behind Hyprland releases, so this role enables this COPR only when it has a
+# matching Fedora chroot. Fedora 41 is intentionally handled without hard-failing
+# because solopasha/hyprland currently publishes only Rawhide packages.
 hypr_fedora_copr: solopasha/hyprland
 
-# Fedora package names for the tools directly referenced by .config/hypr/*.conf
-# and .config/hypr/hyprland.lua. wl-clipboard is intentionally omitted because
-# the packages role already installs it on Fedora.
-hypr_fedora_packages:
+# Fedora package candidates for the tools directly referenced by
+# .config/hypr/*.conf and .config/hypr/hyprland.lua. The role probes dnf and
+# installs available packages, then reports any gaps. wl-clipboard is
+# intentionally omitted because the packages role already installs it on Fedora.
+hypr_fedora_candidate_packages:
   # Core compositor and Hyprland helpers
   - hyprland
   - hypridle

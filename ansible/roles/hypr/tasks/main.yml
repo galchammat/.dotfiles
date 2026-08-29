@@ -10,9 +10,31 @@
     - can_install_packages | default(false)
     - not ansible_check_mode
 
+- name: "Hypr | Fedora | Check Hyprland COPR metadata"
+  ansible.builtin.uri:
+    url: "https://copr.fedorainfracloud.org/api_3/project?ownername={{ hypr_fedora_copr.split('/')[0] }}&projectname={{ hypr_fedora_copr.split('/')[1] }}"
+    return_content: true
+  register: hypr_fedora_copr_metadata
+  changed_when: false
+  failed_when: false
+  when:
+    - ansible_facts['os_family'] == 'RedHat'
+    - can_install_packages | default(false)
+    - not ansible_check_mode
+
+- name: "Hypr | Fedora | Decide whether Hyprland COPR supports this release"
+  ansible.builtin.set_fact:
+    hypr_fedora_copr_chroot: "fedora-{{ ansible_facts['distribution_major_version'] }}-{{ ansible_facts['architecture'] }}"
+    hypr_fedora_copr_available: >-
+      {{ hypr_fedora_copr_metadata.status | default(0) == 200
+         and ('fedora-' ~ ansible_facts['distribution_major_version'] ~ '-' ~ ansible_facts['architecture'])
+             in (hypr_fedora_copr_metadata.json.chroot_repos.keys() | default([])) }}
+  when: ansible_facts['os_family'] == 'RedHat'
+
 # The tracked config is hyprland.lua, which needs recent Hyprland Lua config
 # support. solopasha/hyprland tracks current Hyprland ecosystem packages for
-# Fedora when base Fedora repositories lag or omit helper components.
+# Fedora when base Fedora repositories lag or omit helper components. Fedora 41
+# is skipped here because the COPR no longer publishes that chroot.
 - name: "Hypr | Fedora | Enable Hyprland COPR"
   community.general.copr:
     name: "{{ hypr_fedora_copr }}"
@@ -22,16 +44,43 @@
     - ansible_facts['os_family'] == 'RedHat'
     - can_install_packages | default(false)
     - not ansible_check_mode
+    - hypr_fedora_copr_available | default(false)
 
-- name: "Hypr | Fedora | Install Hyprland packages"
+- name: "Hypr | Fedora | Check available Hyprland packages"
+  ansible.builtin.command: "dnf -q repoquery --available --latest-limit=1 {{ item }}"
+  loop: "{{ hypr_fedora_candidate_packages }}"
+  register: hypr_fedora_package_checks
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: ansible_facts['os_family'] == 'RedHat'
+
+- name: "Hypr | Fedora | Collect available Hyprland packages"
+  ansible.builtin.set_fact:
+    hypr_fedora_available_packages: >-
+      {{ hypr_fedora_package_checks.results
+         | default([])
+         | selectattr('rc', 'eq', 0)
+         | map(attribute='item')
+         | list }}
+    hypr_fedora_missing_packages: >-
+      {{ hypr_fedora_package_checks.results
+         | default([])
+         | rejectattr('rc', 'eq', 0)
+         | map(attribute='item')
+         | list }}
+  when: ansible_facts['os_family'] == 'RedHat'
+
+- name: "Hypr | Fedora | Install available Hyprland packages"
   ansible.builtin.dnf:
-    name: "{{ hypr_fedora_packages }}"
+    name: "{{ hypr_fedora_available_packages }}"
     state: present
   become: true
   when:
     - ansible_facts['os_family'] == 'RedHat'
     - can_install_packages | default(false)
     - not ansible_check_mode
+    - hypr_fedora_available_packages | default([]) | length > 0
 
 - name: "Hypr | Debian | Update package cache"
   ansible.builtin.apt:
@@ -103,8 +152,9 @@
   ansible.builtin.debug:
     msg:
       - "Hyprland desktop status:"
-      - "- Fedora COPR: {{ hypr_fedora_copr if ansible_facts['os_family'] == 'RedHat' else 'not used on this distro' }}"
-      - "- Fedora packages requested: {{ hypr_fedora_packages | join(', ') if ansible_facts['os_family'] == 'RedHat' else 'n/a' }}"
+      - "- Fedora COPR: {{ (hypr_fedora_copr ~ ' enabled for ' ~ hypr_fedora_copr_chroot) if (ansible_facts['os_family'] == 'RedHat' and hypr_fedora_copr_available | default(false)) else ('not available for ' ~ hypr_fedora_copr_chroot | default('this release')) if ansible_facts['os_family'] == 'RedHat' else 'not used on this distro' }}"
+      - "- Fedora packages available: {{ hypr_fedora_available_packages | default([]) | join(', ') if ansible_facts['os_family'] == 'RedHat' else 'n/a' }}"
+      - "- Fedora packages missing/skipped: {{ hypr_fedora_missing_packages | default([]) | join(', ') if ansible_facts['os_family'] == 'RedHat' else 'n/a' }}"
       - "- Debian packages available: {{ hypr_debian_available_packages | default([]) | join(', ') if ansible_facts['os_family'] == 'Debian' else 'n/a' }}"
       - "- Debian packages missing/skipped: {{ hypr_debian_missing_packages | default([]) | join(', ') if ansible_facts['os_family'] == 'Debian' else 'n/a' }}"
       - "- Referenced commands missing: {{ (hypr_command_checks.results | rejectattr('rc', 'eq', 0) | map(attribute='item') | list | join(', ')) | default('none', true) }}"
