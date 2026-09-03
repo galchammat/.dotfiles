@@ -3,6 +3,21 @@
   vars:
     dot_repo_root: "{{ playbook_dir | dirname }}"
     can_install_packages: true
+  pre_tasks:
+    # Detect WSL once, up front, so every role (and any single-role `-t` run) can
+    # gate on it. The WSL kernel string contains "microsoft" (WSL1) or "WSL2"
+    # (WSL2). Tagged `always` so it is set even when a single role is selected
+    # with --tags. `is_wsl` is then consumed by the GUI roles below.
+    - name: "Detect whether we are running under WSL"
+      ansible.builtin.set_fact:
+        is_wsl: "{{ 'microsoft' in ansible_facts['kernel'] | lower or 'wsl' in ansible_facts['kernel'] | lower }}"
+      tags: always
+
+    - name: "Note that GUI roles are skipped under WSL"
+      ansible.builtin.debug:
+        msg: "WSL detected — the i3 and hypr GUI/session roles will be skipped (no local display server)."
+      when: is_wsl | default(false)
+      tags: always
   roles:
     - { role: nvm, tags: ["nvm"]}
     - { role: packages, tags: ["packages"] }
@@ -14,8 +29,10 @@
     - { role: tailscale, tags: ["tailscale"]}
     - { role: fonts, tags: ["fonts"] }
     - { role: zsh, tags: ["zsh"]}
-    - { role: i3, tags: ["i3"]}
-    - { role: hypr, tags: ["hypr"] }
+    # i3 (X11) and hypr (Wayland) drive local graphical sessions, which do not
+    # exist under WSL, so both are skipped there via `when: not is_wsl`.
+    - { role: i3, tags: ["i3"], when: not (is_wsl | default(false)) }
+    - { role: hypr, tags: ["hypr"], when: not (is_wsl | default(false)) }
     - { role: git, tags: ["git"]}
     # Interactive, one-time GitHub account setup (browser device flow). The
     # `never` tag keeps it OUT of a normal full run; invoke it explicitly with:
