@@ -53,6 +53,39 @@
   ansible.builtin.set_fact:
     gh_auth_text: "{{ (gh_auth.stdout | default('')) ~ (gh_auth.stderr | default('')) }}"
 
+# The interactive steps below reconnect gh to the controlling terminal via
+# `< /dev/tty`. Under WSL (and anywhere ansible runs without a usable controlling
+# terminal) /dev/tty is not openable and gh dies with "No such device or
+# address". Probe it first so we can fail with instructions instead of crashing.
+- name: "GitHub | Check for a usable controlling terminal"
+  ansible.builtin.command: sh -c 'true < /dev/tty'
+  register: gh_tty_check
+  changed_when: false
+  failed_when: false
+
+- name: "GitHub | Decide whether interactive login/refresh is needed"
+  ansible.builtin.set_fact:
+    gh_needs_interactive: >-
+      {{ gh_auth.rc != 0
+         or ('admin:public_key' not in gh_auth_text)
+         or ('admin:ssh_signing_key' not in gh_auth_text) }}
+
+- name: "GitHub | Require an interactive terminal for the device flow"
+  # No usable /dev/tty (typical under WSL when driven by ansible): the browser
+  # device flow can't run here. Stop with copy-paste commands the user can run
+  # directly in their shell (which has a TTY), then re-run `dotfiles --git`.
+  ansible.builtin.fail:
+    msg: |
+      GitHub setup needs an interactive terminal, but /dev/tty is not usable in
+      this environment (common under WSL when run through ansible).
+
+      Run these once in your shell, then re-run `dotfiles --git`:
+        gh auth login --hostname github.com --git-protocol ssh --web --skip-ssh-key
+        gh auth refresh --hostname github.com -s admin:public_key,admin:ssh_signing_key
+  when:
+    - gh_needs_interactive | bool
+    - gh_tty_check.rc != 0
+
 # `< /dev/tty > /dev/tty` reconnects gh to the controlling terminal so its
 # one-time code, URL and prompts are visible/interactive even though Ansible
 # otherwise captures task stdout. Requires a real TTY, which is exactly why this
@@ -61,17 +94,21 @@
   ansible.builtin.shell: >
     gh auth login --hostname github.com --git-protocol ssh --web --skip-ssh-key
     < /dev/tty > /dev/tty 2>&1
-  when: gh_auth.rc != 0
+  when:
+    - gh_auth.rc != 0
+    - gh_tty_check.rc == 0
 
 - name: "GitHub | Grant key-admin scopes (device flow)"
   ansible.builtin.shell: >
     gh auth refresh --hostname github.com
     -s admin:public_key,admin:ssh_signing_key
     < /dev/tty > /dev/tty 2>&1
-  when: >
-    gh_auth.rc != 0
-    or ('admin:public_key' not in gh_auth_text)
-    or ('admin:ssh_signing_key' not in gh_auth_text)
+  when:
+    - gh_tty_check.rc == 0
+    - >
+      gh_auth.rc != 0
+      or ('admin:public_key' not in gh_auth_text)
+      or ('admin:ssh_signing_key' not in gh_auth_text)
 
 - name: "GitHub | Machine ID for a unique key title"
   ansible.builtin.slurp:
