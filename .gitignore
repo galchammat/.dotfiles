@@ -9,8 +9,13 @@
 # Local python venv used to run molecule.
 .venv/
 
-# Claude Code: track only the hooks. Everything else under ~/.claude is runtime
-# state (credentials, session transcripts, caches, logs) or machine-local config
-# (settings.json carries the Vertex project id) and must stay out of this repo.
+# Machine-local shell environment: per-machine ids and endpoints, kept out of
+# this public repo. Sourced by .zshenv along with the rest of .config/zsh.
+.config/zsh/99-local.zsh
+
+# Claude Code: track the settings and hooks, ignore the rest. Everything else
+# under ~/.claude is runtime state -- credentials, session transcripts, caches,
+# logs -- and must stay out of this repo.
 .claude/*
 !.claude/hooks/
+!.claude/settings.json
