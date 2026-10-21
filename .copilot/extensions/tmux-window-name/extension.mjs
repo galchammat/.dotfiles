@@ -33,7 +33,8 @@ function sanitize(title) {
     .replace(/[\r\n\t]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 200);
+    .slice(0, 15)
+    .trim();
 }
 
 let lastName;
