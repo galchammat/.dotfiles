@@ -5,6 +5,10 @@
     "exclusive": false,
     "passthrough": true,
     "margin-top": 6,
+    "start_hidden": true,
+    // Explicit show/hide (not toggle) so bar-hud.sh never has to track state
+    "on-sigusr1": "show",
+    "on-sigusr2": "hide",
 
     "modules-left": ["hyprland/workspaces"],
     "modules-center": ["hyprland/window"],

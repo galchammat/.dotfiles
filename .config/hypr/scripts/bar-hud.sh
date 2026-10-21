@@ -1,60 +1,55 @@
 #!/usr/bin/env bash
 # bar-hud: on-demand waybar visibility — bar appears while ALT is held.
 #
-# waybar's SIGUSR1 is a *toggle*; to avoid state drift we never trust a
-# remembered state and instead read ground truth from `hyprctl layers`
-# before deciding whether to send it.
+# waybar is configured with on-sigusr1=show and on-sigusr2=hide, so both
+# signals are idempotent and this script never has to remember state.
 #
 # Usage: bar-hud.sh start|down|up|toggle
-#   start   launch waybar (hidden) — called from hyprland autostart
+#   start   launch waybar (starts hidden) — called from hyprland autostart
 #   down    ALT key pressed — schedule a show after DELAY (debounce)
-#   up      ALT key released — cancel pending show, hide if visible
-#   toggle  manual flip (recovery bind / pin the bar open)
+#   up      ALT key released — cancel pending show, hide
+#   toggle  manual flip (pin the bar open without holding ALT)
 
 DELAY=0.3
 RUNDIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 TIMER="$RUNDIR/bar-hud.timer"
 
+show() { pkill -SIGUSR1 -x waybar; }
+hide() { pkill -SIGUSR2 -x waybar; }
+
+# A hidden waybar keeps its layer surface but drops to the bottom layer;
+# a shown one sits on the overlay layer.
 visible() {
-    hyprctl layers 2>/dev/null | grep -q "namespace: waybar"
+    hyprctl layers | awk '/Layer level/ { lvl = $3 } /namespace: waybar/ && lvl == "3" { found = 1 } END { exit !found }'
 }
 
-show_if_hidden() {
-    visible || pkill -SIGUSR1 waybar
-}
-
-hide_if_visible() {
-    visible && pkill -SIGUSR1 waybar
+cancel_timer() {
+    if [ -e "$TIMER" ]; then
+        kill "$(cat "$TIMER")" 2>/dev/null
+        rm -f "$TIMER"
+    fi
 }
 
 case "$1" in
     start)
-        if ! pgrep -x waybar >/dev/null; then
-            (waybar >/dev/null 2>&1 &)
-            sleep 0.5
-        fi
-        # waybar starts visible; hide it so the default state is hidden
-        hide_if_visible
+        pgrep -x waybar >/dev/null || (waybar >/dev/null 2>&1 &)
         ;;
     down)
         if [ ! -e "$TIMER" ]; then
             (
                 sleep "$DELAY"
                 rm -f "$TIMER"
-                show_if_hidden
+                show
             ) &
             echo $! >"$TIMER"
         fi
         ;;
     up)
-        if [ -e "$TIMER" ]; then
-            kill "$(cat "$TIMER")" 2>/dev/null
-            rm -f "$TIMER"
-        fi
-        hide_if_visible
+        cancel_timer
+        hide
         ;;
     toggle)
-        rm -f "$TIMER"
-        pkill -SIGUSR1 waybar
+        cancel_timer
+        if visible; then hide; else show; fi
         ;;
 esac
