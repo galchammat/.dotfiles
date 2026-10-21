@@ -28,13 +28,13 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
   fi
 fi
 
-# Preferred coding agent for window 1, set via `dotfiles --agent <name>`.
-# Defaults to copilot when unset. Falls back to a plain shell (with a hint) if
-# the configured agent isn't installed, so a new session never dies on startup.
-# Preferred coding agent shown in window 1 of new sessions. Change it with
-# `dotfiles --agent <copilot|claude|codex|opencode>`, which rewrites the marked
-# line below in place (you can also just edit it by hand).
-AGENT="copilot" # dotfiles:agent
+# Preferred coding agent for window 1. This script is constant: the choice lives
+# in AI_AGENT, exported from ~/.config/zsh/99-local.zsh and set via
+# `dotfiles --agent <copilot|claude|codex|opencode>`. Falls back to claude when
+# unset (e.g. launched from a shell that never sourced the zsh config), and to a
+# plain shell (with a hint) if the configured agent isn't installed, so a new
+# session never dies on startup.
+AGENT="${AI_AGENT:-claude}"
 
 # Create session with windows starting in DIR:
 #   window 1: the preferred coding agent

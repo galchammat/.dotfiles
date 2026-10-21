@@ -520,6 +520,25 @@ if git --git-dir="$DOTFILES_GIT" --work-tree="$HOME" ls-files --error-unmatch .c
   _cmd "git --git-dir=$DOTFILES_GIT --work-tree=$HOME update-index --skip-worktree .config/gh/hosts.yml"
 fi
 
+# ~/.config/zsh/99-local.zsh is machine-local and gitignored (see ~/.gitignore),
+# so a fresh checkout has no copy of it — yet every zsh shell sources it via
+# .zshenv, and `dev` reads AI_AGENT from it. Seed it when missing; later runs
+# (and `dotfiles --agent`) rewrite the marked line rather than the file.
+if [[ ! -f "$HOME/.config/zsh/99-local.zsh" ]]; then
+  __task "Initializing machine-local zsh config"
+  mkdir -p "$HOME/.config/zsh"
+  cat > "$HOME/.config/zsh/99-local.zsh" <<'EOF'
+# Machine-local environment. Deliberately untracked by the dotfiles repo
+# (see ~/.gitignore): per-machine ids and endpoints live here so they stay out
+# of a public repo. Sourced last, so it can override anything above it.
+
+# Preferred coding agent for window 1 of `dev` sessions.
+# Set with: dotfiles --agent <copilot|claude|codex|opencode>
+export AI_AGENT="copilot" # dotfiles:agent
+EOF
+  _task_done
+fi
+
 if [[ "${CLONE_ONLY:-}" == "true" ]]; then
   echo -e "${CHECK_MARK} ${CAT_GREEN}Repository ready at ${DOTFILES_GIT}${NC}"
   exit 0
@@ -696,10 +715,12 @@ fi
 _task_done
 
 # Set the preferred coding agent for `dev` (window 1 of new tmux dev sessions).
-# Rewrites the marked AGENT= line in ~/.local/bin/dev in place (no separate config
-# file), then offers to install/check the agent's CLI so the user can either have
-# it handled here or manage it themselves. Purely user-level (npm global), no sudo.
-# Prompt is skipped without a TTY (unattended-safe).
+# The choice is written to ~/.config/zsh/99-local.zsh (machine-local, gitignored)
+# as AI_AGENT; the dev script itself stays constant and reads the variable, so
+# nothing under version control is modified. Then offers to install/check the
+# agent's CLI so the user can either have it handled here or manage it
+# themselves. Purely user-level (npm global), no sudo. Prompt is skipped
+# without a TTY (unattended-safe).
 if [[ -n "${DEV_AGENT:-}" ]]; then
   case "$DEV_AGENT" in
     copilot)  agent_pkg="@github/copilot";           agent_bin="copilot"  ;;
@@ -712,16 +733,19 @@ if [[ -n "${DEV_AGENT:-}" ]]; then
       ;;
   esac
 
-  dev_script="$HOME/.local/bin/dev"
-  if [[ ! -f "$dev_script" ]] || ! grep -q '# dotfiles:agent' "$dev_script"; then
-    echo -e "${RED} [✗]  ${CAT_TEXT}Could not find the agent marker in ${dev_script}${NC}"
-    exit 1
+  agent_file="$HOME/.config/zsh/99-local.zsh"
+  mkdir -p "$(dirname "$agent_file")"
+  if grep -q '# dotfiles:agent' "$agent_file" 2>/dev/null; then
+    # Substitute via temp file + mv for portable in-place editing (no sed -i quirks).
+    agent_tmp="$(mktemp)"
+    sed "s|^export AI_AGENT=.*# dotfiles:agent|export AI_AGENT=\"${DEV_AGENT}\" # dotfiles:agent|" "$agent_file" > "$agent_tmp" && mv "$agent_tmp" "$agent_file"
+  else
+    # No marked line yet: a local file that predates the marker. Append one
+    # (the bootstrap step above normally seeds this for fresh machines).
+    printf '\n# Preferred coding agent for window 1 of `dev` sessions.\nexport AI_AGENT="%s" # dotfiles:agent\n' "$DEV_AGENT" >> "$agent_file"
   fi
-  # Substitute via temp file + mv for portable in-place editing (no sed -i quirks).
-  agent_tmp="$(mktemp)"
-  sed "s|^AGENT=.*# dotfiles:agent|AGENT=\"${DEV_AGENT}\" # dotfiles:agent|" "$dev_script" > "$agent_tmp" && mv "$agent_tmp" "$dev_script"
-  chmod +x "$dev_script"
-  echo -e "${GREEN} [✓]  ${CAT_TEXT}Preferred dev agent set to '${DEV_AGENT}' in ${dev_script}${NC}"
+  echo -e "${GREEN} [✓]  ${CAT_TEXT}Preferred dev agent set to '${DEV_AGENT}' in ${agent_file}${NC}"
+  echo -e "${CAT_SUBTEXT1}New shells pick this up automatically (or run: export AI_AGENT=${DEV_AGENT})${NC}"
 
   # Offer to install/check the agent, or let the user handle it. Only prompt when
   # attached to a terminal so unattended invocations just set the preference.
