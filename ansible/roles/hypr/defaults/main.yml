@@ -33,6 +33,9 @@ hypr_fedora_candidate_packages:
   - mako
   - gnome-keyring
 
+  # Status bar, shown on demand by .config/hypr/scripts/bar-hud.sh
+  - waybar
+
   # Keybinding and media utilities
   - grim
   - slurp
@@ -66,6 +69,9 @@ hypr_debian_candidate_packages:
   - mako-notifier
   - gnome-keyring
 
+  # Status bar, shown on demand by .config/hypr/scripts/bar-hud.sh
+  - waybar
+
   # Keybinding and media utilities
   - grim
   - slurp
@@ -90,6 +96,7 @@ hypr_required_commands:
   - rofi
   - mako
   - gnome-keyring-daemon
+  - waybar
   - grim
   - slurp
   - wl-copy

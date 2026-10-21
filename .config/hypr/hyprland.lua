@@ -49,6 +49,7 @@ hl.on("hyprland.start", function()
 	hl.exec_cmd("hyprpaper")
 	hl.exec_cmd("hypridle")
 	hl.exec_cmd("hyprsunset -t 2000")
+	hl.exec_cmd("~/.config/hypr/scripts/bar-hud.sh start")
 end)
 
 -------------------------------
@@ -298,6 +299,15 @@ hl.bind(mainMod .. " + mouse_up", hl.dsp.focus({ workspace = "e-1" }))
 hl.bind(mainMod .. " + mouse:272", hl.dsp.window.drag(), { mouse = true })
 hl.bind(mainMod .. " + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
+-- Waybar HUD: bar appears while ALT is held (debounced ~0.3s in the script),
+-- so quick alt+1/h/j/k/l switches don't flash it. Non-consuming so ALT still
+-- reaches apps and all mainMod binds above are unaffected.
+local hud = (os.getenv("HOME") or "") .. "/.config/hypr/scripts/bar-hud.sh"
+hl.bind(mainMod .. " + Alt_L", hl.dsp.exec_cmd(hud .. " down"), { non_consuming = true })
+hl.bind(mainMod .. " + Alt_L", hl.dsp.exec_cmd(hud .. " up"), { release = true, non_consuming = true })
+-- Manual toggle: show/pin the bar without holding ALT (also recovers from any desync)
+hl.bind(mainMod .. " + B", hl.dsp.exec_cmd(hud .. " toggle"))
+
 -- Laptop multimedia keys for volume and LCD brightness
 hl.bind(
 	"XF86AudioRaiseVolume",
@@ -368,6 +378,13 @@ hl.window_rule({
 --     no_anim = true,
 -- })
 -- overlayLayerRule:set_enabled(false)
+
+-- Waybar HUD slides in/out from the top edge
+hl.layer_rule({
+	name = "waybar-hud-slide",
+	match = { namespace = "^waybar$" },
+	animation = "slide down",
+})
 
 -- Hyprland-run windowrule
 hl.window_rule({
