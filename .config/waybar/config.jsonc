@@ -8,6 +8,8 @@
     "layer": "overlay",
     "position": "top",
     "exclusive": false,
+    // The transparent rest of the bar must not swallow clicks
+    "passthrough": true,
     "start_hidden": true,
     "on-sigusr1": "show",
     "on-sigusr2": "hide",

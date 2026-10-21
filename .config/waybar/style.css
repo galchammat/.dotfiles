@@ -1,6 +1,7 @@
 @import url("/etc/xdg/waybar/style.css");
 
-/* The bar overlays windows, so the stock 50% background is unreadable */
+/* The bar spans the full width, so only the module boxes should be visible */
 window#waybar {
-    background-color: rgb(43, 48, 59);
+    background-color: transparent;
+    border-bottom: none;
 }
