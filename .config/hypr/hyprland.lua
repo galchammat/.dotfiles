@@ -49,7 +49,7 @@ hl.on("hyprland.start", function()
 	hl.exec_cmd("hyprpaper")
 	hl.exec_cmd("hypridle")
 	hl.exec_cmd("hyprsunset -t 2000")
-	hl.exec_cmd("~/.config/hypr/scripts/bar-hud.sh start")
+	hl.exec_cmd("waybar")
 end)
 
 -------------------------------
@@ -299,14 +299,45 @@ hl.bind(mainMod .. " + mouse_up", hl.dsp.focus({ workspace = "e-1" }))
 hl.bind(mainMod .. " + mouse:272", hl.dsp.window.drag(), { mouse = true })
 hl.bind(mainMod .. " + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
--- Waybar HUD: bar appears while ALT is held (debounced ~0.3s in the script),
--- so quick alt+1/h/j/k/l switches don't flash it. Non-consuming so ALT still
--- reaches apps and all mainMod binds above are unaffected.
-local hud = (os.getenv("HOME") or "") .. "/.config/hypr/scripts/bar-hud.sh"
-hl.bind(mainMod .. " + Alt_L", hl.dsp.exec_cmd(hud .. " down"), { non_consuming = true })
-hl.bind(mainMod .. " + Alt_L", hl.dsp.exec_cmd(hud .. " up"), { release = true, non_consuming = true })
--- Manual toggle: show/pin the bar without holding ALT (also recovers from any desync)
-hl.bind(mainMod .. " + B", hl.dsp.exec_cmd(hud .. " toggle"))
+-- Waybar HUD: the bar appears after ALT has been held ~0.3s, so quick
+-- alt+1/h/j/k/l switches don't flash it. A release bind can't be used to hide
+-- it: Hyprland skips the ALT release bind when another key (e.g. a workspace
+-- number) was pressed during the hold. Instead a timer polls the physical key
+-- state while ALT is down. waybar is configured with on-sigusr1=show and
+-- on-sigusr2=hide, so both signals are idempotent.
+local hudTicks, hudShown, hudPinned = 0, false, false
+local function hudSignal(sig)
+	hl.exec_cmd("pkill -" .. sig .. " -x waybar")
+end
+local hudPoll
+hudPoll = hl.timer(function()
+	if hl.is_key_down("Alt_L") then
+		hudTicks = hudTicks + 1
+		if hudTicks >= 3 and not hudShown then
+			hudShown = true
+			hudSignal("SIGUSR1")
+		end
+	else
+		hudPoll:set_enabled(false)
+		if hudShown and not hudPinned then
+			hudShown = false
+			hudSignal("SIGUSR2")
+		end
+	end
+end, { timeout = 100, type = "repeat" })
+hudPoll:set_enabled(false)
+-- No modifier on the press bind: ALT isn't in the modmask yet when Alt_L goes
+-- down. Non-consuming so ALT still reaches apps and the mainMod binds above.
+hl.bind("Alt_L", function()
+	hudTicks = 0
+	hudPoll:set_enabled(true)
+end, { non_consuming = true })
+-- Pin the bar open (or unpin it) without holding ALT
+hl.bind(mainMod .. " + B", function()
+	hudPinned = not hudPinned
+	hudShown = hudPinned
+	hudSignal(hudPinned and "SIGUSR1" or "SIGUSR2")
+end)
 
 -- Laptop multimedia keys for volume and LCD brightness
 hl.bind(

@@ -1,36 +1,27 @@
+// Stock waybar config with Hyprland modules. Module formatting comes from the
+// distro default; this file only sets the layout and the on-demand HUD behavior.
 {
+    "include": ["/etc/xdg/waybar/config.jsonc"],
+
+    // Drawn over windows without reserving space, so nothing reflows when it
+    // appears. Shown/hidden by the ALT-hold logic in .config/hypr/hyprland.lua.
     "layer": "overlay",
     "position": "top",
-    "height": 34,
     "exclusive": false,
-    "passthrough": true,
-    "margin-top": 6,
     "start_hidden": true,
-    // Explicit show/hide (not toggle) so bar-hud.sh never has to track state
     "on-sigusr1": "show",
     "on-sigusr2": "hide",
 
     "modules-left": ["hyprland/workspaces"],
     "modules-center": ["hyprland/window"],
-    "modules-right": ["clock"],
-
-    "hyprland/workspaces": {
-        "format": "{icon}",
-        "format-icons": {
-            "active": "",
-            "default": ""
-        },
-        "on-click": "activate"
-    },
-
-    "hyprland/window": {
-        "max-length": 60,
-        "separate-outputs": false
-    },
-
-    "clock": {
-        "format": "  {:%H:%M}   {:%a %d %b}",
-        "format-alt": "  {:%Y-%m-%d %H:%M:%S}",
-        "tooltip-format": "<tt>{calendar}</tt>"
-    }
+    "modules-right": [
+        "pulseaudio",
+        "network",
+        "cpu",
+        "memory",
+        "backlight",
+        "battery",
+        "clock",
+        "tray"
+    ]
 }

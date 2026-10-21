@@ -33,7 +33,7 @@ hypr_fedora_candidate_packages:
   - mako
   - gnome-keyring
 
-  # Status bar, shown on demand by .config/hypr/scripts/bar-hud.sh
+  # Status bar, shown while ALT is held (see .config/hypr/hyprland.lua)
   - waybar
 
   # Keybinding and media utilities
@@ -69,7 +69,7 @@ hypr_debian_candidate_packages:
   - mako-notifier
   - gnome-keyring
 
-  # Status bar, shown on demand by .config/hypr/scripts/bar-hud.sh
+  # Status bar, shown while ALT is held (see .config/hypr/hyprland.lua)
   - waybar
 
   # Keybinding and media utilities
