@@ -39,6 +39,7 @@
 
       # Window Manager & Desktop
       - autorandr
+      - caffeine
       - dbus-x11
       - dmenu
       - feh
@@ -78,6 +79,9 @@
   when: ansible_facts['os_family'] == 'Debian'
 
 # FEDORA-SPECIFIC PACKAGES
+# caffeine is left out: Fedora's only package by that name is
+# gnome-shell-extension-caffeine, a GNOME Shell extension that does nothing
+# under the i3 or Hyprland sessions this repo sets up.
 - name: "Packages | Install Fedora-specific packages"
   ansible.builtin.dnf:
     name:
