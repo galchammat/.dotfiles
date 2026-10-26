@@ -39,6 +39,7 @@
 
       # Window Manager & Desktop
       - autorandr
+      - caffeine
       - dbus-x11
       - dmenu
       - feh
