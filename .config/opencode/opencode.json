@@ -1,10 +1,30 @@
-// opencode.jsonc
 {
-    "plugin": ["@tarquinen/opencode-dcp@latest"],
-    "server": {
-        "port": 4096,
-        "hostname": "0.0.0.0",
-        "mdns": true,
-        "cors": ["https://example.com"]
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "enmaas": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "EnMaaS",
+      "options": {
+        "baseURL": "{env:ENMAAS_BASE_URL}/v1",
+        "apiKey": "{env:ENMAAS_API_KEY}",
+        "headers": {
+          "Authorization": "Bearer {env:ENMAAS_API_KEY}"
+        }
+      },
+      "models": {
+        "rits/zai-org/glm-5-3": {
+          "name": "GLM-5.3"
+        }
+      }
     }
+  },
+  "model": "enmaas/rits/zai-org/glm-5-3",
+  "mcp": {
+    "servers": {
+      "atlassian": {
+        "type": "remote",
+        "url": "https://mcp.atlassian.com/v2/mcp"
+      }
+    }
+  }
 }

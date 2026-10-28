@@ -18,3 +18,13 @@
 # (settings.json carries the Vertex project id) and must stay out of this repo.
 .claude/*
 !.claude/hooks/
+
+# OpenCode: track only the shared config. service.json is machine-local service
+# registration, cli.json/dcp.jsonc are local prefs, and node_modules plus the
+# package files are plugin runtime state.
+.config/opencode/*
+!.config/opencode/opencode.json
+
+# OpenCode runtime state: credentials (auth.json), session database, logs, and
+# shell tool output live under the data directory.
+.local/share/opencode/
