@@ -12,6 +12,11 @@
       - curl
       - git
       - gawk
+      # Node's official Linux binaries link libatomic.so.1, which is not part
+      # of a minimal Fedora or Debian install; without it node fails to start
+      # with "error while loading shared libraries: libatomic.so.1". The
+      # package is named libatomic1 on Debian.
+      - "{{ 'libatomic1' if ansible_facts['os_family'] == 'Debian' else 'libatomic' }}"
     state: present
   become: true
 
@@ -23,7 +28,7 @@
     executable: /bin/bash
   when: not nvm_stat.stat.exists
 
-- name: "NVM | Check if Node.js LTS is installed"
+- name: "NVM | Check if Node.js is installed"
   ansible.builtin.shell: |
     export NVM_DIR="{{ ansible_facts['user_dir'] }}/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
@@ -35,12 +40,12 @@
   failed_when: false
   no_log: true
 
-- name: "NVM | Install Node.js LTS"
+- name: "NVM | Install Node.js {{ nvm_node_major }}"
   ansible.builtin.shell: |
     export NVM_DIR="{{ ansible_facts['user_dir'] }}/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-    nvm install --lts
-    nvm alias default lts/*
+    nvm install {{ nvm_node_major }}
+    nvm alias default {{ nvm_node_major }}
     nvm use default
   args:
     executable: /bin/bash

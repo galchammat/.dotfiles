@@ -1,0 +1,7 @@
+---
+# Node is pinned to a major version rather than tracking lts/*: the alias
+# silently flipped to Node 26 on the day it was promoted to LTS (2026-10-28),
+# shipping a runtime that no existing machine runs and that additionally links
+# libatomic.so.1 (see the dependency task below). Bump deliberately, the same
+# way neovim_version is managed in the packages role.
+nvm_node_major: "24"
