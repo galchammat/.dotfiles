@@ -49,8 +49,11 @@
     nvm use default
   args:
     executable: /bin/bash
-  when: 
-    - node_version_check.rc != 0 or node_version_check.stdout == ''
+  when:
+    # `nvm version default` prints "N/A" with exit 0 when the alias points
+    # at a version that is not installed — the exact state an LTS
+    # promotion leaves behind — so treat it as needing the re-alias too.
+    - node_version_check.rc != 0 or node_version_check.stdout == '' or node_version_check.stdout == 'N/A'
     - not ansible_check_mode
   register: node_install
 

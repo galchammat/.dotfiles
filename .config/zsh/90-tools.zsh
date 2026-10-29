@@ -21,6 +21,20 @@ if [[ -d "$NVM_DIR/versions/node" ]]; then
       ref="$NVM_DIR/alias/$target"
       (( depth++ ))
     done
+    # The chain dead-ended on a version that is not installed here. An
+    # upstream LTS promotion does this overnight (lts/* flipped
+    # on 2026-10-28 while 24 was the pinned line), and `nvm alias default
+    # 24` writes the partial "24", for which no version
+    # exists either. Resolve the remainder the way nvm itself would: the
+    # highest installed version matching the last target, else
+    # the highest installed version at all.
+    local -a bins
+    bins=("$NVM_DIR"/versions/node/v$target*/bin(N))
+    (( $#bins )) || bins=("$NVM_DIR"/versions/node/v*/bin(N))
+    # ${(@On)bins}[1] is the first of a reverse numeric sort, i.e. the
+    # newest; lexical order would rank v24.9.0 over v24.20.0, and glob
+    # qualifiers alone cannot sort numerically.
+    (( $#bins )) && path=("${${(@On)bins}[1]}" $path)
   }
 fi
 
