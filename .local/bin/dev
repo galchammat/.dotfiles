@@ -39,17 +39,21 @@ AGENT="${AI_AGENT:-claude}"
 # Create session with windows starting in DIR:
 #   window 1: the preferred coding agent
 #   window 2: a plain shell
+# Neither window is named explicitly: an explicit -n turns tmux's
+# automatic-rename off for that window, so we let tmux assign names itself
+# (the running command, or the pane title via .tmux.conf's
+# automatic-rename-format for agent sessions).
 # Window 2 passes no command, so tmux uses its configured default-command, which
 # .tmux.conf already sets to zsh (falling back to tmux's default where absent) —
 # no need to hardcode the shell here.
 if command -v "$AGENT" >/dev/null 2>&1; then
-  tmux new-session -d -s "$SESSION" -n "$AGENT" -c "$DIR" "$AGENT"
+  tmux new-session -d -s "$SESSION" -c "$DIR" "$AGENT"
 else
   # Agent not installed: land in a normal shell with a hint instead of failing.
-  tmux new-session -d -s "$SESSION" -n "$AGENT" -c "$DIR" \
+  tmux new-session -d -s "$SESSION" -c "$DIR" \
     "printf '%s\n' \"dev: agent '$AGENT' not found on PATH. Set/install one with: dotfiles --agent <copilot|claude|codex|opencode>\"; exec \"\${SHELL:-sh}\""
 fi
-tmux new-window -t "$SESSION:2" -n zsh -c "$DIR"
+tmux new-window -t "$SESSION:2" -c "$DIR"
 
 # Focus the agent window by default
 tmux select-window -t "$SESSION:1"
