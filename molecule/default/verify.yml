@@ -124,3 +124,17 @@
         that: leaked_key.stdout | default('') | length == 0
         fail_msg: "user.signingkey leaked into the tracked ~/.gitconfig."
       when: tracked_gitconfig.stat.exists
+
+    # --- Claude Code leaves no attribution on commits or pull requests -------
+    - name: Read the Claude Code user settings
+      ansible.builtin.slurp:
+        src: "{{ home }}/.claude/settings.json"
+      register: claude_settings
+
+    - name: Assert commit and PR attribution are switched off
+      ansible.builtin.assert:
+        that:
+          - (claude_settings.content | b64decode | from_json).attribution.commit == ''
+          - (claude_settings.content | b64decode | from_json).attribution.pr == ''
+          - not (claude_settings.content | b64decode | from_json).attribution.sessionUrl
+        fail_msg: "~/.claude/settings.json does not switch off Claude Code attribution."

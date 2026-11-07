@@ -1,0 +1,15 @@
+---
+# ~/.claude/settings.json stays out of this repo (see .gitignore): Claude Code
+# writes machine-local settings into it as you use it. This role merges the keys
+# below into that file and leaves every other key as it finds it.
+claude_settings_path: "{{ ansible_facts['user_dir'] }}/.claude/settings.json"
+
+claude_settings:
+  # No "Co-Authored-By: Claude" trailer on commits, no "Generated with Claude
+  # Code" line in pull requests, and no claude.ai session link on either. The
+  # object form, not `attribution: false`, because older Claude Code versions
+  # reject a boolean here and then ignore the whole settings file.
+  attribution:
+    commit: ""
+    pr: ""
+    sessionUrl: false

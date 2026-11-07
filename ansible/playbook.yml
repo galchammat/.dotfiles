@@ -33,6 +33,9 @@
     # exist under WSL, so both are skipped there via `when: not is_wsl`.
     - { role: i3, tags: ["i3"], when: not (is_wsl | default(false)) }
     - { role: hypr, tags: ["hypr"], when: not (is_wsl | default(false)) }
+    # Merges managed keys (no commit/PR attribution) into the untracked
+    # ~/.claude/settings.json.
+    - { role: claude, tags: ["claude"]}
     - { role: git, tags: ["git"]}
     # Interactive, one-time GitHub account setup (browser device flow). The
     # `never` tag keeps it OUT of a normal full run; invoke it explicitly with:

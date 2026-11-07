@@ -1,0 +1,37 @@
+---
+- name: "Claude | Ensure ~/.claude exists"
+  ansible.builtin.file:
+    path: "{{ claude_settings_path | dirname }}"
+    state: directory
+    mode: '0755'
+
+- name: "Claude | Check for an existing settings.json"
+  ansible.builtin.stat:
+    path: "{{ claude_settings_path }}"
+  register: claude_settings_stat
+
+- name: "Claude | Read the existing settings.json"
+  ansible.builtin.slurp:
+    src: "{{ claude_settings_path }}"
+  register: claude_settings_slurp
+  when: claude_settings_stat.stat.exists
+
+# A settings.json that is not valid JSON fails here, before anything is written,
+# rather than being replaced by the managed keys alone.
+- name: "Claude | Parse the current settings"
+  ansible.builtin.set_fact:
+    claude_settings_current: >-
+      {{ ((claude_settings_slurp.content | b64decode | trim) if claude_settings_stat.stat.exists else '')
+         | default('{}', true) | from_json }}
+
+# Written only when a managed key is missing or different. Comparing the parsed
+# settings, not the text, means Claude Code's own rewrites of the file (key
+# order, formatting) do not count as drift.
+- name: "Claude | Merge the managed keys into settings.json"
+  ansible.builtin.copy:
+    dest: "{{ claude_settings_path }}"
+    content: "{{ claude_settings_merged | to_nice_json(indent=2, sort_keys=false) }}\n"
+    mode: "{{ claude_settings_stat.stat.mode | default('0644') }}"
+  vars:
+    claude_settings_merged: "{{ claude_settings_current | combine(claude_settings, recursive=true) }}"
+  when: claude_settings_merged != claude_settings_current
