@@ -7,9 +7,13 @@
 #     built for current Fedora releases (F43/44/45). Replaces solopasha/hyprland,
 #     which now publishes Rawhide only and therefore 404s on stable Fedora.
 #   - lihaohong/yazi: yazi, which is not packaged in base Fedora or sdegler.
+#   - seaweed/xdg-desktop-portal-termfilechooser: the FileChooser portal
+#     backend that hands file pickers to yazi (see
+#     .config/xdg-desktop-portal/portals.conf), likewise not in base Fedora.
 hypr_fedora_coprs:
   - sdegler/hyprland
   - lihaohong/yazi
+  - seaweed/xdg-desktop-portal-termfilechooser
 
 # Fedora package candidates for the tools directly referenced by
 # .config/hypr/*.conf and .config/hypr/hyprland.lua. The role probes dnf and
@@ -24,6 +28,14 @@ hypr_fedora_candidate_packages:
   - hyprlock
   - hyprpolkitagent
   - xdg-desktop-portal-hyprland
+
+  # File chooser: .config/xdg-desktop-portal/portals.conf routes
+  # org.freedesktop.impl.portal.FileChooser to this backend, which runs the
+  # terminal file manager instead of the toolkit dialog. It ships the
+  # yazi-wrapper.sh that .config/xdg-desktop-portal-termfilechooser/config
+  # references as `cmd=yazi-wrapper.sh`. Fedora only: upstream is packaged for
+  # Arch/Void/Nix and this COPR, there is no Debian package.
+  - xdg-desktop-portal-termfilechooser
 
   # Apps and desktop daemons launched by the config
   - kitty
@@ -100,6 +112,7 @@ hypr_required_commands:
   - grim
   - slurp
   - wl-copy
+  - dbus-update-activation-environment
   - brightnessctl
   - playerctl
   - wpctl
