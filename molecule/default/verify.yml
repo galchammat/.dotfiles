@@ -17,7 +17,7 @@
       register: cmd_check
       changed_when: false
       failed_when: false
-      loop: [nvim, tmux, zsh, git, gh, rg, unzip, curl, alacritty, just, pass]
+      loop: [nvim, tmux, zsh, git, gh, rg, unzip, curl, alacritty, just, pass, yazi]
 
     - name: Assert every required command is installed
       ansible.builtin.assert:
@@ -138,3 +138,58 @@
           - (claude_settings.content | b64decode | from_json).attribution.pr == ''
           - not (claude_settings.content | b64decode | from_json).attribution.sessionUrl
         fail_msg: "~/.claude/settings.json does not switch off Claude Code attribution."
+
+    # --- file dialogs open yazi, not the toolkit's own chooser --------------
+    # Three separate pieces have to line up, and when any one is missing the
+    # apps just fall back to their native dialog without an error, so check all
+    # of them: the portal backend (package), the wrapper it runs, and the two
+    # tracked config files that point FileChooser at it.
+    - name: Stat the FileChooser portal backend
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: filechooser_backend
+      loop:
+        - /usr/share/xdg-desktop-portal/portals/termfilechooser.portal
+        - /usr/libexec/xdg-desktop-portal-termfilechooser
+        - /usr/share/xdg-desktop-portal-termfilechooser/yazi-wrapper.sh
+
+    - name: Assert the FileChooser backend is installed
+      ansible.builtin.assert:
+        that: item.stat.exists
+        fail_msg: >-
+          '{{ item.item }}' is missing, so apps open their own file dialog
+          instead of yazi.
+      loop: "{{ filechooser_backend.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Assert the yazi wrapper is runnable
+      ansible.builtin.command:
+        cmd: test -x /usr/share/xdg-desktop-portal-termfilechooser/yazi-wrapper.sh
+      changed_when: false
+
+    - name: Read the tracked portal wiring
+      ansible.builtin.slurp:
+        src: "{{ home }}/dotfiles/{{ item }}"
+      register: portal_wiring
+      loop:
+        - .config/xdg-desktop-portal/portals.conf
+        - .config/xdg-desktop-portal-termfilechooser/config
+        - .config/hypr/hyprland.lua
+
+    - name: Assert FileChooser is routed to termfilechooser
+      ansible.builtin.assert:
+        that: (portal_wiring.results[0].content | b64decode) is search('org.freedesktop.impl.portal.FileChooser=termfilechooser')
+        fail_msg: "portals.conf does not route FileChooser to termfilechooser."
+
+    - name: Assert the tracked config names the wrapper the package ships
+      ansible.builtin.assert:
+        that: (portal_wiring.results[1].content | b64decode) is search('cmd=yazi-wrapper.sh')
+        fail_msg: "xdg-desktop-portal-termfilechooser/config does not set cmd=yazi-wrapper.sh."
+
+    # Without this the environment never reaches Slack and friends, and the
+    # portal is bypassed no matter how well the backend is installed.
+    - name: Assert the Hyprland config exports GTK_USE_PORTAL
+      ansible.builtin.assert:
+        that: (portal_wiring.results[2].content | b64decode) is search('GTK_USE_PORTAL')
+        fail_msg: "hyprland.lua does not export GTK_USE_PORTAL, so apps never use the portal."

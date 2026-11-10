@@ -50,6 +50,10 @@ hl.on("hyprland.start", function()
 	hl.exec_cmd("hypridle")
 	hl.exec_cmd("hyprsunset -t 2000")
 	hl.exec_cmd("waybar")
+	-- Mirror the exported portal setting below into the dbus/systemd activation
+	-- environment, so apps started by those (rather than spawned by Hyprland)
+	-- still route file dialogs through the portal. Same call as .config/i3/config.
+	hl.exec_cmd("dbus-update-activation-environment --systemd GTK_USE_PORTAL=1")
 end)
 
 -------------------------------
@@ -60,6 +64,13 @@ end)
 
 hl.env("XCURSOR_SIZE", "24")
 hl.env("HYPRCURSOR_SIZE", "24")
+
+-- Route GTK file dialogs through xdg-desktop-portal instead of letting each
+-- toolkit draw its own. .config/xdg-desktop-portal/portals.conf then hands
+-- FileChooser to xdg-desktop-portal-termfilechooser, so apps open yazi.
+-- Without this, Electron apps (Slack, browsers) never talk to the portal and
+-- fall back to their native dialog. X11 has the same setting in .config/i3/config.
+hl.env("GTK_USE_PORTAL", "1")
 
 -----------------------
 ----- PERMISSIONS -----

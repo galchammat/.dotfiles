@@ -154,6 +154,31 @@
   register: hypr_desktop_file
   when: hypr_wayland_sessions_dir.stat.exists
 
+# The FileChooser portal is inert without its backend. .config/xdg-desktop-portal/
+# portals.conf routes FileChooser to termfilechooser, so a missing backend makes
+# every app fall back to the toolkit's own dialog and the yazi picker silently
+# never appears. The backend (package) and the wiring (tracked dotfiles) are
+# checked separately because only the first one is installable.
+- name: "Hypr | Check the FileChooser portal backend"
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /usr/share/xdg-desktop-portal/portals/termfilechooser.portal
+    # Shipped by the package and referenced by the tracked config as
+    # `cmd=yazi-wrapper.sh`, which the backend resolves in this directory.
+    - /usr/share/xdg-desktop-portal-termfilechooser/yazi-wrapper.sh
+  register: hypr_filechooser_backend
+  check_mode: false
+
+- name: "Hypr | Check the tracked FileChooser portal wiring"
+  ansible.builtin.stat:
+    path: "{{ dot_repo_root | default(playbook_dir | dirname) }}/{{ item }}"
+  loop:
+    - .config/xdg-desktop-portal/portals.conf
+    - .config/xdg-desktop-portal-termfilechooser/config
+  register: hypr_filechooser_config
+  check_mode: false
+
 - name: "Hypr | Report installation status"
   ansible.builtin.debug:
     msg:
@@ -167,6 +192,8 @@
       - "- Wayland sessions available: {{ '✓' if (hypr_wayland_sessions_dir.stat.exists | default(false)) else '✗' }}"
       - "- Hyprland.desktop found: {{ '✓' if (hypr_desktop_file.stat.exists | default(false)) else '✗' }}"
       - "- Lua config note: .config/hypr/hyprland.lua requires a recent Hyprland build with Lua config support."
+      - "- File chooser backend: {{ '✓' if (hypr_filechooser_backend.results | rejectattr('stat.exists') | list | length == 0) else ('✗ ' ~ (hypr_filechooser_backend.results | rejectattr('stat.exists') | map(attribute='item') | join(', '))) }}"
+      - "- File chooser config: {{ '✓' if (hypr_filechooser_config.results | rejectattr('stat.exists') | list | length == 0) else ('✗ ' ~ (hypr_filechooser_config.results | rejectattr('stat.exists') | map(attribute='item') | join(', '))) }}"
       - ""
       - "{{ 'Note: Log out and select Hyprland from the display manager to use this session.' if (hypr_desktop_file.stat.exists | default(false)) else 'Note: Install packages first, then select Hyprland from the display manager.' }}"
 
@@ -189,3 +216,35 @@
     - can_install_packages | default(false)
     - not ansible_check_mode
     - ansible_facts['os_family'] in ['RedHat', 'Debian']
+
+# Same reasoning as the assertion above, for the file picker: the tracked
+# portals.conf points FileChooser at termfilechooser, so without the backend
+# every app quietly falls back to its own dialog and the yazi picker never
+# shows up. Debian has no package at all, so only RedHat is asserted here and
+# the Debian run merely reports the gap.
+- name: "Hypr | Assert the tracked file picker configuration is present"
+  ansible.builtin.assert:
+    that:
+      - hypr_filechooser_config.results | rejectattr('stat.exists') | list | length == 0
+    fail_msg: >-
+      The tracked portal configuration that routes FileChooser to yazi is
+      missing from {{ dot_repo_root | default(playbook_dir | dirname) }}:
+      {{ hypr_filechooser_config.results | rejectattr('stat.exists') | map(attribute='item') | join(', ') }}
+    success_msg: "Tracked FileChooser portal configuration present."
+
+- name: "Hypr | Assert the yazi file picker backend is installed"
+  ansible.builtin.assert:
+    that:
+      - hypr_filechooser_backend.results | rejectattr('stat.exists') | list | length == 0
+    fail_msg: >-
+      xdg-desktop-portal-termfilechooser is not installed, so apps open their
+      native file dialog instead of yazi. Missing:
+      {{ hypr_filechooser_backend.results | rejectattr('stat.exists') | map(attribute='item') | join(', ') }}.
+      The COPR probably lacks a chroot for
+      {{ hypr_fedora_copr_chroot | default('this release') }}
+      (available: {{ hypr_fedora_available_coprs | default([]) | join(', ') | default('none', true) }}).
+    success_msg: "File chooser backend present; GTK/Electron apps will open yazi."
+  when:
+    - can_install_packages | default(false)
+    - not ansible_check_mode
+    - ansible_facts['os_family'] == 'RedHat'
