@@ -8,7 +8,7 @@
 #   2. a fresh `opencode pair --remote` connect link, saved to the state dir
 #      (one-time use, expires 5 minutes after the run — only needed to pair
 #      a NEW browser)
-#   3. `claude remote-control`
+#   3. `claude remote-control`, from a workspace claude already trusts
 #
 # Trigger it with whatever the OS gives you: a systemd user unit, cron
 # @reboot, a desktop-session autostart entry — or on WSL, a Windows Startup
@@ -26,6 +26,21 @@ log() { printf '%s %s\n' "$(date -Is)" "$*" >>"$state/remote-agents.log"; }
 export PATH="$HOME/.local/bin:$PATH"
 [ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1
 
+# First directory claude has already trusted (per ~/.claude.json), empty if none.
+claude_trusted_dir() {
+  python3 -c '
+import json, os
+try:
+    projects = json.load(open(os.path.expanduser("~/.claude.json"))).get("projects", {})
+    for path, cfg in projects.items():
+        if isinstance(cfg, dict) and cfg.get("hasTrustDialogAccepted"):
+            print(path)
+            break
+except Exception:
+    pass
+' 2>/dev/null
+}
+
 # Links need the network; Wi-Fi can lag behind boot. Wait up to ~3 min.
 for _ in $(seq 1 90); do
   if getent hosts opentunnel.xyz claude.ai >/dev/null 2>&1; then break; fi
@@ -34,7 +49,7 @@ done
 getent hosts opentunnel.xyz claude.ai >/dev/null 2>&1 || log "warning: network still down after wait, starting anyway"
 
 # 1. opencode background service (holds the remote tunnel)
-if pgrep -f 'opencode.*serve --service' >/dev/null 2>&1; then
+if pgrep -fx '.*opencode(\.exe)? serve --service' >/dev/null 2>&1; then
   log "opencode service: already running"
 else
   if command -v opencode >/dev/null 2>&1; then
@@ -54,12 +69,27 @@ else
 fi
 
 # 3. claude remote control
-if pgrep -f 'claude remote-control' >/dev/null 2>&1; then
+if pgrep -fx 'claude remote-control' >/dev/null 2>&1; then
   log "claude remote-control: already running"
 else
   if command -v claude >/dev/null 2>&1; then
+    # Claude refuses to start in an untrusted workspace when there is no
+    # terminal to accept the trust dialog, so start from one it already
+    # trusts. REMOTE_AGENTS_DIR overrides the picked directory.
+    workspace="${REMOTE_AGENTS_DIR:-$(claude_trusted_dir)}"
+    workspace="${workspace:-$HOME}"
+    cd "$workspace" 2>/dev/null || cd "$HOME"
+    printf '\n--- %s starting in %s ---\n' "$(date -Is)" "$PWD" >>"$state/claude-remote-control.log"
     setsid nohup claude remote-control </dev/null >>"$state/claude-remote-control.log" 2>&1 &
-    log "claude remote-control: started pid $!"
+    pid=$!
+    # It can die instantly (untrusted workspace, logged out); say so instead
+    # of leaving a silent corpse.
+    sleep 2
+    if kill -0 "$pid" 2>/dev/null; then
+      log "claude remote-control: started pid $pid in $PWD"
+    else
+      log "claude remote-control: DIED on start — see claude-remote-control.log"
+    fi
   else
     log "claude remote-control: SKIPPED — claude not found in PATH"
   fi
