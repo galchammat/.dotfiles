@@ -4,18 +4,15 @@
 # Starts, all in the background, idempotently (safe to re-run any time):
 #   1. the opencode background service — holds the OpenTunnel remote link
 #      (remote must be pre-accepted; the tunnel subdomain is stable across
-#      restarts, so already-paired browsers reconnect without a new link)
-#   2. a fresh `opencode pair --remote` connect link, saved to the state dir
-#      (one-time use, expires 5 minutes after the run — only needed to pair
-#      a NEW browser)
-#   3. `claude remote-control`, from a workspace claude already trusts
+#      restarts, so paired browsers reconnect without a new pair link)
+#   2. `claude remote-control`, from a workspace claude already trusts
 #
 # Trigger it with whatever the OS gives you: a systemd user unit, cron
 # @reboot, a desktop-session autostart entry — or on WSL, a Windows Startup
 # .vbs running:
 #   wsl.exe --exec /bin/bash <home>/.local/bin/remote-agents
 #
-# Logs and the pair link live in: ~/.local/state/remote-agents/
+# Logs live in: ~/.local/state/remote-agents/
 
 state="$HOME/.local/state/remote-agents"
 mkdir -p "$state"
@@ -60,15 +57,7 @@ else
   fi
 fi
 
-# 2. fresh pairing link, saved for anything not yet paired
-if command -v opencode >/dev/null 2>&1; then
-  opencode pair --remote --yes >"$state/opencode-pair-link.txt" 2>&1
-  log "opencode pair: link written to opencode-pair-link.txt (one-time, 5 min)"
-else
-  log "opencode pair: SKIPPED — opencode not found in PATH"
-fi
-
-# 3. claude remote control
+# 2. claude remote control
 if pgrep -fx 'claude remote-control' >/dev/null 2>&1; then
   log "claude remote-control: already running"
 else
