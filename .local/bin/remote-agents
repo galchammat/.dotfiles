@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# remote-agents — bring up the remote-agent links after boot or login.
+#
+# Starts, all in the background, idempotently (safe to re-run any time):
+#   1. the opencode background service — holds the OpenTunnel remote link
+#      (remote must be pre-accepted; the tunnel subdomain is stable across
+#      restarts, so already-paired browsers reconnect without a new link)
+#   2. a fresh `opencode pair --remote` connect link, saved to the state dir
+#      (one-time use, expires 5 minutes after the run — only needed to pair
+#      a NEW browser)
+#   3. `claude remote-control`
+#
+# Trigger it with whatever the OS gives you: a systemd user unit, cron
+# @reboot, a desktop-session autostart entry — or on WSL, a Windows Startup
+# .vbs running:
+#   wsl.exe --exec /bin/bash <home>/.local/bin/remote-agents
+#
+# Logs and the pair link live in: ~/.local/state/remote-agents/
+
+state="$HOME/.local/state/remote-agents"
+mkdir -p "$state"
+
+log() { printf '%s %s\n' "$(date -Is)" "$*" >>"$state/remote-agents.log"; }
+
+# PATH for nvm-installed opencode + ~/.local/bin claude
+export PATH="$HOME/.local/bin:$PATH"
+[ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1
+
+# Links need the network; Wi-Fi can lag behind boot. Wait up to ~3 min.
+for _ in $(seq 1 90); do
+  if getent hosts opentunnel.xyz claude.ai >/dev/null 2>&1; then break; fi
+  sleep 2
+done
+getent hosts opentunnel.xyz claude.ai >/dev/null 2>&1 || log "warning: network still down after wait, starting anyway"
+
+# 1. opencode background service (holds the remote tunnel)
+if pgrep -f 'opencode.*serve --service' >/dev/null 2>&1; then
+  log "opencode service: already running"
+else
+  if command -v opencode >/dev/null 2>&1; then
+    opencode service start >>"$state/opencode-service.log" 2>&1
+    log "opencode service: start issued"
+  else
+    log "opencode service: SKIPPED — opencode not found in PATH"
+  fi
+fi
+
+# 2. fresh pairing link, saved for anything not yet paired
+if command -v opencode >/dev/null 2>&1; then
+  opencode pair --remote --yes >"$state/opencode-pair-link.txt" 2>&1
+  log "opencode pair: link written to opencode-pair-link.txt (one-time, 5 min)"
+else
+  log "opencode pair: SKIPPED — opencode not found in PATH"
+fi
+
+# 3. claude remote control
+if pgrep -f 'claude remote-control' >/dev/null 2>&1; then
+  log "claude remote-control: already running"
+else
+  if command -v claude >/dev/null 2>&1; then
+    setsid nohup claude remote-control </dev/null >>"$state/claude-remote-control.log" 2>&1 &
+    log "claude remote-control: started pid $!"
+  else
+    log "claude remote-control: SKIPPED — claude not found in PATH"
+  fi
+fi
+
+log "remote-agents pass done"
