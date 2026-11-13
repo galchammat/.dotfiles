@@ -1,0 +1,6 @@
+# Fedora with systemd as PID 1, so logind runs and holds locks as on a desktop.
+FROM {{ item.image }}
+RUN dnf install -y -q systemd dbus-broker python3 sudo shadow-utils git ansible \
+      procps-ng findutils tar \
+ && dnf clean all
+CMD ["/usr/sbin/init"]

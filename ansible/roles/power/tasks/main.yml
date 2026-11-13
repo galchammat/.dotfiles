@@ -1,0 +1,149 @@
+---
+# Keeps the machines in `power_hold_hosts` awake. Two locks, because no single one
+# covers every desktop:
+#
+#   * a root service holds a logind block lock on sleep, idle and the lid
+#     switch (templates/power-hold.service.j2). That stops suspend under any
+#     desktop and at the login screen, and stops hypridle, which reads logind's
+#     BlockInhibited. It holds from boot, logged in or not.
+#   * a user service takes GNOME's own inhibitor in GNOME sessions
+#     (templates/power-hold-session.service.j2), since GNOME's screen blanking
+#     ignores logind.
+#
+# The run ends by reading the lock back from logind and failing if it is not
+# held, so a dotfiles run on the machine is its own check.
+
+- name: "Power | Read this machine's Tailscale name"
+  ansible.builtin.command: tailscale status --json
+  register: power_tailscale
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: "Power | Decide whether this machine is kept awake"
+  ansible.builtin.set_fact:
+    power_here: >-
+      {{ (ansible_facts['hostname'] | lower) in (power_hold_hosts | map('lower'))
+         or (power_tailscale_name | lower) in (power_hold_hosts | map('lower')) }}
+  vars:
+    power_tailscale_name: >-
+      {{ ((power_tailscale.stdout | from_json).Self.HostName | default(''))
+         if (power_tailscale.rc | default(1)) == 0 and power_tailscale.stdout | length > 0
+         else '' }}
+
+- name: "Power | Not kept awake here"
+  ansible.builtin.debug:
+    msg: "{{ ansible_facts['hostname'] }} is not in power_hold_hosts ({{ power_hold_hosts | join(', ') }}); skipping."
+  when: not (power_here | bool)
+
+- name: "Power | Keep this machine awake"
+  when: power_here | bool
+  block:
+    - name: "Power | Require systemd"
+      ansible.builtin.assert:
+        that: ansible_facts['service_mgr'] == 'systemd'
+        fail_msg: >-
+          {{ ansible_facts['hostname'] }} is in power_hold_hosts but is not run
+          by systemd ({{ ansible_facts['service_mgr'] }}), so nothing can hold
+          the lock.
+
+    # --- the system-wide logind lock -----------------------------------------
+    - name: "Power | Install the system service"
+      ansible.builtin.template:
+        src: power-hold.service.j2
+        dest: /etc/systemd/system/power-hold.service
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+      register: power_unit
+
+    - name: "Power | Enable and start the system service"
+      ansible.builtin.systemd_service:
+        name: power-hold.service
+        daemon_reload: "{{ power_unit.changed }}"
+        enabled: true
+        state: "{{ 'restarted' if power_unit.changed else 'started' }}"
+      become: true
+      when: not ansible_check_mode
+
+    # --- GNOME's own inhibitor, per session ----------------------------------
+    - name: "Power | Create the user unit directories"
+      ansible.builtin.file:
+        path: "{{ ansible_facts['user_dir'] }}/.config/systemd/user/graphical-session.target.wants"
+        state: directory
+        mode: "0755"
+
+    - name: "Power | Install the session service"
+      ansible.builtin.template:
+        src: power-hold-session.service.j2
+        dest: "{{ ansible_facts['user_dir'] }}/.config/systemd/user/power-hold-session.service"
+        mode: "0644"
+      register: power_session_unit
+
+    # Enabled by its symlink rather than `systemctl --user enable`, which needs
+    # a running user manager that an SSH or CI run may not have.
+    - name: "Power | Enable the session service"
+      ansible.builtin.file:
+        src: "{{ ansible_facts['user_dir'] }}/.config/systemd/user/power-hold-session.service"
+        dest: "{{ ansible_facts['user_dir'] }}/.config/systemd/user/graphical-session.target.wants/power-hold-session.service"
+        state: link
+
+    - name: "Power | Check for a running graphical session"
+      ansible.builtin.command: systemctl --user is-active graphical-session.target
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['user_uid'] }}"
+      register: power_graphical
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: "Power | Start the session service in the running session"
+      ansible.builtin.systemd_service:
+        name: power-hold-session.service
+        scope: user
+        daemon_reload: true
+        state: "{{ 'restarted' if power_session_unit.changed else 'started' }}"
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['user_uid'] }}"
+      when:
+        - power_graphical.stdout | default('') == 'active'
+        - not ansible_check_mode
+
+    # --- read the lock back from logind --------------------------------------
+    # BlockInhibited is what hypridle and logind itself consult, so this is the
+    # lock as they see it. Retried briefly: the service may still be starting.
+    - name: "Power | Read the block locks logind holds"
+      ansible.builtin.command: >-
+        busctl get-property org.freedesktop.login1 /org/freedesktop/login1
+        org.freedesktop.login1.Manager BlockInhibited
+      register: power_blocked
+      changed_when: false
+      check_mode: false
+      retries: 10
+      delay: 1
+      until: >-
+        power_blocked.rc == 0 and
+        (power_hold_what.split(':') | reject('in', power_blocked.stdout) | list | length) == 0
+      when: not ansible_check_mode
+
+    - name: "Power | Describe the sessions on this machine"
+      ansible.builtin.shell: |
+        set -o pipefail
+        for s in $(loginctl list-sessions --no-legend | awk '{print $1}'); do
+          loginctl show-session "$s" -p Name -p Class -p Type -p Desktop -p State --value | paste -sd' '
+        done
+      args:
+        executable: /bin/bash
+      register: power_sessions
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: "Power | Report"
+      ansible.builtin.debug:
+        msg:
+          - "Kept awake: {{ ansible_facts['hostname'] }}"
+          - "logind blocks: {{ power_blocked.stdout | default('(check mode)') }}"
+          - "GNOME session lock: {{ 'started' if power_graphical.stdout | default('') == 'active' else 'no systemd graphical session now; starts with the next GNOME login' }}"
+          - "Sessions (name class type desktop state): {{ power_sessions.stdout_lines | default([]) }}"
