@@ -1,0 +1,12 @@
+---
+# Machines that are kept awake, by short hostname or Tailscale machine name
+# (case-insensitive). Every other machine skips the role.
+caffeine_hosts:
+  - csb
+
+# What the system-wide logind lock blocks:
+#   sleep              suspend/hibernate, whoever asks (GNOME, GDM, logind)
+#   idle               logind's idle action, and hypridle (it honours this lock)
+#   handle-lid-switch  closing the lid does not suspend
+caffeine_inhibit_what: "sleep:idle:handle-lid-switch"
+caffeine_reason: "Keep this machine awake"

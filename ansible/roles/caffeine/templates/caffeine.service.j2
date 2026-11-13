@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+# Holds a logind block lock for as long as the machine is up, so it never
+# suspends or idles. Runs as root so it holds from boot, before anyone logs in,
+# and so it may take the lid-switch lock (a user outside a session may not).
+[Unit]
+Description=Keep this machine awake
+After=systemd-logind.service
+
+[Service]
+ExecStart=/usr/bin/systemd-inhibit --what={{ caffeine_inhibit_what }} --who=caffeine --why="{{ caffeine_reason }}" --mode=block /usr/bin/sleep infinity
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

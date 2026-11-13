@@ -1,0 +1,57 @@
+---
+- name: Verify the machine is kept awake
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Read the service state
+      ansible.builtin.command: systemctl is-{{ item }} caffeine.service
+      register: unit_state
+      changed_when: false
+      failed_when: false
+      loop: [enabled, active]
+
+    - name: The service is enabled at boot and running
+      ansible.builtin.assert:
+        that:
+          - unit_state.results[0].stdout == 'enabled'
+          - unit_state.results[1].stdout == 'active'
+        fail_msg: "caffeine.service is {{ unit_state.results | map(attribute='stdout') | join('/') }}."
+
+    # What logind (and hypridle) consult before suspending or idling.
+    - name: Read the block locks logind holds
+      ansible.builtin.command: >-
+        busctl get-property org.freedesktop.login1 /org/freedesktop/login1
+        org.freedesktop.login1.Manager BlockInhibited
+      register: blocked
+      changed_when: false
+
+    - name: Sleep, idle and the lid switch are all blocked
+      ansible.builtin.assert:
+        that: blocked.stdout is search(item)
+        fail_msg: "logind does not block {{ item }}: {{ blocked.stdout }}"
+      loop: [sleep, idle, handle-lid-switch]
+
+    # Restart=always must bring the lock back if its holder dies.
+    - name: Kill the process holding the lock
+      ansible.builtin.command: systemctl kill --signal=KILL caffeine.service
+      changed_when: true
+
+    - name: The lock comes back
+      ansible.builtin.command: >-
+        busctl get-property org.freedesktop.login1 /org/freedesktop/login1
+        org.freedesktop.login1.Manager BlockInhibited
+      register: blocked_again
+      changed_when: false
+      retries: 15
+      delay: 1
+      until: blocked_again.stdout is search('sleep')
+
+    - name: The GNOME session service is installed and enabled
+      ansible.builtin.stat:
+        path: /home/tester/.config/systemd/user/graphical-session.target.wants/caffeine-session.service
+      register: session_link
+
+    - name: Assert the session service link
+      ansible.builtin.assert:
+        that: session_link.stat.exists and session_link.stat.islnk
+        fail_msg: "caffeine-session.service is not enabled for graphical sessions."

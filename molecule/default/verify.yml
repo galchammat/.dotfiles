@@ -193,3 +193,16 @@
       ansible.builtin.assert:
         that: (portal_wiring.results[2].content | b64decode) is search('GTK_USE_PORTAL')
         fail_msg: "hyprland.lua does not export GTK_USE_PORTAL, so apps never use the portal."
+
+    # --- only the machines in caffeine_hosts are kept awake -------------------
+    # This container is `dotfiles`, not in the list (the caffeine scenario runs
+    # the role on a `csb`), so the role must leave it alone.
+    - name: Stat the keep-awake service
+      ansible.builtin.stat:
+        path: /etc/systemd/system/caffeine.service
+      register: caffeine_unit
+
+    - name: Assert a machine outside caffeine_hosts is not kept awake
+      ansible.builtin.assert:
+        that: not caffeine_unit.stat.exists
+        fail_msg: "caffeine.service was installed on a machine not in caffeine_hosts."

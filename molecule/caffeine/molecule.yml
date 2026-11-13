@@ -1,0 +1,36 @@
+---
+# Runs the caffeine role the way bin/dotfiles does, on a Fedora container that
+# boots systemd, so the lock is really taken from logind and read back. The
+# container is named `csb`, so the role's own host check selects it; the
+# default scenario (hostname `dotfiles`) checks that other machines skip it.
+dependency:
+  name: galaxy
+driver:
+  name: podman
+platforms:
+  - name: caffeine
+    hostname: csb
+    image: quay.io/fedora/fedora:44
+    dockerfile: Dockerfile.j2
+    pre_build_image: false
+    command: /usr/sbin/init
+    systemd: always
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      result_format: yaml
+      interpreter_python: auto_silent
+verifier:
+  name: ansible
+scenario:
+  # Idempotence is checked inside converge.yml (a second run must change
+  # nothing), because molecule's own step would re-run the shipping tasks.
+  test_sequence:
+    - dependency
+    - destroy
+    - create
+    - prepare
+    - converge
+    - verify
+    - destroy

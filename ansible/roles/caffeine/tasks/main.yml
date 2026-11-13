@@ -1,0 +1,149 @@
+---
+# Keeps the machines in `caffeine_hosts` awake. Two locks, because no single one
+# covers every desktop:
+#
+#   * a root service holds a logind block lock on sleep, idle and the lid
+#     switch (templates/caffeine.service.j2). That stops suspend under any
+#     desktop and at the login screen, and stops hypridle, which reads logind's
+#     BlockInhibited. It holds from boot, logged in or not.
+#   * a user service takes GNOME's own inhibitor in GNOME sessions
+#     (templates/caffeine-session.service.j2), since GNOME's screen blanking
+#     ignores logind.
+#
+# The run ends by reading the lock back from logind and failing if it is not
+# held, so a dotfiles run on the machine is its own check.
+
+- name: "Caffeine | Read this machine's Tailscale name"
+  ansible.builtin.command: tailscale status --json
+  register: caffeine_tailscale
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: "Caffeine | Decide whether this machine is kept awake"
+  ansible.builtin.set_fact:
+    caffeine_here: >-
+      {{ (ansible_facts['hostname'] | lower) in (caffeine_hosts | map('lower'))
+         or (caffeine_tailscale_name | lower) in (caffeine_hosts | map('lower')) }}
+  vars:
+    caffeine_tailscale_name: >-
+      {{ ((caffeine_tailscale.stdout | from_json).Self.HostName | default(''))
+         if (caffeine_tailscale.rc | default(1)) == 0 and caffeine_tailscale.stdout | length > 0
+         else '' }}
+
+- name: "Caffeine | Not kept awake here"
+  ansible.builtin.debug:
+    msg: "{{ ansible_facts['hostname'] }} is not in caffeine_hosts ({{ caffeine_hosts | join(', ') }}); skipping."
+  when: not (caffeine_here | bool)
+
+- name: "Caffeine | Keep this machine awake"
+  when: caffeine_here | bool
+  block:
+    - name: "Caffeine | Require systemd"
+      ansible.builtin.assert:
+        that: ansible_facts['service_mgr'] == 'systemd'
+        fail_msg: >-
+          {{ ansible_facts['hostname'] }} is in caffeine_hosts but is not run
+          by systemd ({{ ansible_facts['service_mgr'] }}), so nothing can hold
+          the lock.
+
+    # --- the system-wide logind lock -----------------------------------------
+    - name: "Caffeine | Install the system service"
+      ansible.builtin.template:
+        src: caffeine.service.j2
+        dest: /etc/systemd/system/caffeine.service
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+      register: caffeine_unit
+
+    - name: "Caffeine | Enable and start the system service"
+      ansible.builtin.systemd_service:
+        name: caffeine.service
+        daemon_reload: "{{ caffeine_unit.changed }}"
+        enabled: true
+        state: "{{ 'restarted' if caffeine_unit.changed else 'started' }}"
+      become: true
+      when: not ansible_check_mode
+
+    # --- GNOME's own inhibitor, per session ----------------------------------
+    - name: "Caffeine | Create the user unit directories"
+      ansible.builtin.file:
+        path: "{{ ansible_facts['user_dir'] }}/.config/systemd/user/graphical-session.target.wants"
+        state: directory
+        mode: "0755"
+
+    - name: "Caffeine | Install the session service"
+      ansible.builtin.template:
+        src: caffeine-session.service.j2
+        dest: "{{ ansible_facts['user_dir'] }}/.config/systemd/user/caffeine-session.service"
+        mode: "0644"
+      register: caffeine_session_unit
+
+    # Enabled by its symlink rather than `systemctl --user enable`, which needs
+    # a running user manager that an SSH or CI run may not have.
+    - name: "Caffeine | Enable the session service"
+      ansible.builtin.file:
+        src: "{{ ansible_facts['user_dir'] }}/.config/systemd/user/caffeine-session.service"
+        dest: "{{ ansible_facts['user_dir'] }}/.config/systemd/user/graphical-session.target.wants/caffeine-session.service"
+        state: link
+
+    - name: "Caffeine | Check for a running graphical session"
+      ansible.builtin.command: systemctl --user is-active graphical-session.target
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['user_uid'] }}"
+      register: caffeine_graphical
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: "Caffeine | Start the session service in the running session"
+      ansible.builtin.systemd_service:
+        name: caffeine-session.service
+        scope: user
+        daemon_reload: true
+        state: "{{ 'restarted' if caffeine_session_unit.changed else 'started' }}"
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['user_uid'] }}"
+      when:
+        - caffeine_graphical.stdout | default('') == 'active'
+        - not ansible_check_mode
+
+    # --- read the lock back from logind --------------------------------------
+    # BlockInhibited is what hypridle and logind itself consult, so this is the
+    # lock as they see it. Retried briefly: the service may still be starting.
+    - name: "Caffeine | Read the block locks logind holds"
+      ansible.builtin.command: >-
+        busctl get-property org.freedesktop.login1 /org/freedesktop/login1
+        org.freedesktop.login1.Manager BlockInhibited
+      register: caffeine_blocked
+      changed_when: false
+      check_mode: false
+      retries: 10
+      delay: 1
+      until: >-
+        caffeine_blocked.rc == 0 and
+        (caffeine_inhibit_what.split(':') | reject('in', caffeine_blocked.stdout) | list | length) == 0
+      when: not ansible_check_mode
+
+    - name: "Caffeine | Describe the sessions on this machine"
+      ansible.builtin.shell: |
+        set -o pipefail
+        for s in $(loginctl list-sessions --no-legend | awk '{print $1}'); do
+          loginctl show-session "$s" -p Name -p Class -p Type -p Desktop -p State --value | paste -sd' '
+        done
+      args:
+        executable: /bin/bash
+      register: caffeine_sessions
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: "Caffeine | Report"
+      ansible.builtin.debug:
+        msg:
+          - "Kept awake: {{ ansible_facts['hostname'] }}"
+          - "logind blocks: {{ caffeine_blocked.stdout | default('(check mode)') }}"
+          - "GNOME session lock: {{ 'started' if caffeine_graphical.stdout | default('') == 'active' else 'no systemd graphical session now; starts with the next GNOME login' }}"
+          - "Sessions (name class type desktop state): {{ caffeine_sessions.stdout_lines | default([]) }}"

@@ -27,6 +27,8 @@
     # up` are `never`-tagged inside the role, so bring the tailnet up with:
     #   dotfiles --tailscale   (ansible-playbook playbook.yml --tags tailscale)
     - { role: tailscale, tags: ["tailscale"]}
+    # Keeps the machines in caffeine_hosts (CSB) from sleeping or idling.
+    - { role: caffeine, tags: ["caffeine"]}
     - { role: fonts, tags: ["fonts"] }
     - { role: zsh, tags: ["zsh"]}
     # i3 (X11) and hypr (Wayland) drive local graphical sessions, which do not

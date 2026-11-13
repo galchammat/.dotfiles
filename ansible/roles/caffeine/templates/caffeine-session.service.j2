@@ -1,0 +1,18 @@
+# {{ ansible_managed }}
+# GNOME blanks and locks the screen from its own idle timer, which ignores
+# logind locks, so a GNOME session takes GNOME's own inhibitor as well. Started
+# by graphical-session.target, which only systemd-managed sessions (GNOME, KDE)
+# reach; elsewhere it never runs. Without gnome-session-inhibit it is skipped.
+[Unit]
+Description=Keep the desktop session from going idle
+PartOf=graphical-session.target
+After=graphical-session.target
+ConditionPathExists=/usr/bin/gnome-session-inhibit
+
+[Service]
+ExecStart=/usr/bin/gnome-session-inhibit --app-id caffeine --reason "{{ caffeine_reason }}" --inhibit idle:suspend --inhibit-only
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
