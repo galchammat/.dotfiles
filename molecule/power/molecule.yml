@@ -1,15 +1,16 @@
 ---
 # Runs the power role the way bin/dotfiles does, on a Fedora container that
-# boots systemd, so the lock is really taken from logind and read back. The
-# container is named `csb`, so the role's own host check selects it; the
-# default scenario (hostname `dotfiles`) checks that other machines skip it.
+# boots systemd, so the lock is really taken from logind and read back. As on
+# CSB, the hostname (`workstation`) is not in power_hold_hosts: a stand-in
+# `tailscale` gives the machine name `csb`, and the role must match on that.
+# The default scenario (hostname `dotfiles`) checks that other machines skip it.
 dependency:
   name: galaxy
 driver:
   name: podman
 platforms:
   - name: power
-    hostname: csb
+    hostname: workstation
     image: quay.io/fedora/fedora:44
     dockerfile: Dockerfile.j2
     pre_build_image: false
