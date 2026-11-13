@@ -70,13 +70,14 @@ RIGHT_ANGLE="${GREEN}\xE2\x88\x9F${NC}"
 
 set -e
 
-# tput drives the spinner and cursor control. It comes from ncurses, which a
-# minimal install may not ship. It is purely cosmetic, so rather than refusing
-# to run, fall back to a no-op and carry on: an installer should not die over
-# progress animation. The OS setup below installs ncurses where it can.
-if ! command -v tput &> /dev/null; then
-  tput() { :; }
-fi
+# tput drives the spinner and cursor control. It is purely cosmetic, so it must
+# never stop the installer under `set -e`: it is missing on a minimal install
+# (ncurses, which the OS setup below installs), and it fails when $TERM is unset,
+# as in a non-interactive `ssh host dotfiles`. Either way it does nothing. The
+# OS setup checks for the binary with `type -P`, since this function shadows it.
+tput() {
+  command tput "$@" 2>/dev/null || true
+}
 
 # Early check for help/version flags (before setup)
 for arg in "$@"; do
@@ -288,10 +289,9 @@ ubuntu_setup() {
     source /etc/os-release
   fi
 
-  if ! [ -x "$(command -v tput)" ]; then
+  if ! type -P tput &> /dev/null; then
     _cmd "sudo apt update"
     _cmd "sudo apt install -y ncurses-bin"
-    unset -f tput 2>/dev/null || true
   fi
   if ! [ -x "$(command -v git)" ]; then
     __task "Installing Git"
@@ -325,10 +325,9 @@ ubuntu_setup() {
 }
 
 arch_setup() {
-  if ! [ -x "$(command -v tput)" ]; then
+  if ! type -P tput &> /dev/null; then
     _cmd "sudo pacman -Sy --noconfirm"
     _cmd "sudo pacman -S --noconfirm ncurses"
-    unset -f tput 2>/dev/null || true
   fi
   if ! [ -x "$(command -v git)" ]; then
     __task "Installing Git"
@@ -368,9 +367,8 @@ fedora_setup() {
   # ncurses provides tput (the spinner) and git clones this repo a few lines
   # below. Both are needed before ansible ever runs, so they cannot wait for
   # the packages role.
-  if ! [ -x "$(command -v tput)" ]; then
+  if ! type -P tput &> /dev/null; then
     _cmd "sudo dnf install -y ncurses"
-    unset -f tput 2>/dev/null || true
   fi
   if ! [ -x "$(command -v git)" ]; then
     __task "Installing Git"
