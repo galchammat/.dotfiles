@@ -20,20 +20,26 @@
   failed_when: false
   check_mode: false
 
+# The Tailscale machine name is the first label of Self.DNSName. It is what
+# `tailscale status` and `ssh <name>` use, and it can differ from the OS
+# hostname (CSB's hostname is the laptop's model name), so both are matched.
 - name: "Power | Decide whether this machine is kept awake"
   ansible.builtin.set_fact:
-    power_here: >-
-      {{ (ansible_facts['hostname'] | lower) in (power_hold_hosts | map('lower'))
-         or (power_tailscale_name | lower) in (power_hold_hosts | map('lower')) }}
+    power_names: "{{ power_name_list | select | map('lower') | unique | list }}"
+    power_here: "{{ power_name_list | select | map('lower') | intersect(power_hold_hosts | map('lower')) | length > 0 }}"
   vars:
-    power_tailscale_name: >-
-      {{ ((power_tailscale.stdout | from_json).Self.HostName | default(''))
+    power_self: >-
+      {{ (power_tailscale.stdout | from_json).Self | default({})
          if (power_tailscale.rc | default(1)) == 0 and power_tailscale.stdout | length > 0
-         else '' }}
+         else {} }}
+    power_name_list:
+      - "{{ ansible_facts['hostname'] }}"
+      - "{{ power_self.HostName | default('') }}"
+      - "{{ (power_self.DNSName | default('')).split('.') | first }}"
 
 - name: "Power | Not kept awake here"
   ansible.builtin.debug:
-    msg: "{{ ansible_facts['hostname'] }} is not in power_hold_hosts ({{ power_hold_hosts | join(', ') }}); skipping."
+    msg: "None of this machine's names ({{ power_names | join(', ') }}) is in power_hold_hosts ({{ power_hold_hosts | join(', ') }}); skipping."
   when: not (power_here | bool)
 
 - name: "Power | Keep this machine awake"
@@ -143,7 +149,7 @@
     - name: "Power | Report"
       ansible.builtin.debug:
         msg:
-          - "Kept awake: {{ ansible_facts['hostname'] }}"
+          - "Kept awake: {{ power_names | join(', ') }}"
           - "logind blocks: {{ power_blocked.stdout | default('(check mode)') }}"
           - "GNOME session lock: {{ 'started' if power_graphical.stdout | default('') == 'active' else 'no systemd graphical session now; starts with the next GNOME login' }}"
           - "Sessions (name class type desktop state): {{ power_sessions.stdout_lines | default([]) }}"

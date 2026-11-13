@@ -18,6 +18,16 @@
     - name: Gather facts
       ansible.builtin.setup:
 
+    # CSB's hostname is the laptop's model name; "csb" is only its Tailscale
+    # machine name. This answers `tailscale status --json` the same way.
+    - name: Install a stand-in tailscale that names this machine csb
+      ansible.builtin.copy:
+        dest: /usr/local/bin/tailscale
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          echo '{"Self":{"HostName":"workstation","DNSName":"csb.example.ts.net."}}'
+
     - name: Create the unprivileged workstation user
       ansible.builtin.user:
         name: tester
