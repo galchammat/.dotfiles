@@ -1,0 +1,43 @@
+---
+- name: Prepare a systemd Fedora machine
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Wait for systemd to finish booting
+      ansible.builtin.command: systemctl is-system-running --wait
+      register: boot
+      changed_when: false
+      # "degraded" (a unit that cannot run in a container) is fine; logind is
+      # checked by name below.
+      failed_when: boot.stdout not in ['running', 'degraded']
+
+    - name: Logind must be running, or no lock can be taken
+      ansible.builtin.command: systemctl is-active systemd-logind.service
+      changed_when: false
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+    - name: Create the unprivileged workstation user
+      ansible.builtin.user:
+        name: tester
+        shell: /bin/bash
+        create_home: true
+
+    # bin/dotfiles asks for the sudo password; here sudo needs none.
+    - name: Grant passwordless sudo
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/tester
+        content: "tester ALL=(ALL) NOPASSWD: ALL\n"
+        mode: '0440'
+        validate: /usr/sbin/visudo -csf %s
+
+    # Same container-only PAM workaround as the default scenario.
+    - name: Make sudo escalation work inside the container (permissive PAM)
+      ansible.builtin.copy:
+        dest: /etc/pam.d/sudo
+        content: |
+          auth       sufficient pam_permit.so
+          account    sufficient pam_permit.so
+          session    sufficient pam_permit.so
+        mode: '0644'
