@@ -13,3 +13,20 @@ claude_settings:
     commit: ""
     pr: ""
     sessionUrl: false
+
+  # Sessions start in auto mode; the first time auto mode blocks something, the next tool call is one approval prompt,
+  # and once approved the rest of that session runs without asking, as bypass mode would (files/elevate.sh). The
+  # user, 2026-11-21: "if it hits one block, it should ask me ... should we go into bypass mode?" and never one prompt
+  # after another.
+  permissions:
+    defaultMode: auto
+  hooks:
+    PermissionDenied:
+      - matcher: "*"
+        hooks: [{type: command, command: "~/.claude/hooks/elevate.sh denied", timeout: 10}]
+    PreToolUse:
+      - matcher: "*"
+        hooks: [{type: command, command: "~/.claude/hooks/elevate.sh pre", timeout: 10}]
+    PostToolUse:
+      - matcher: "*"
+        hooks: [{type: command, command: "~/.claude/hooks/elevate.sh ran", timeout: 10}]

@@ -1,9 +1,10 @@
 ---
-- name: "Claude | Ensure ~/.claude exists"
+- name: "Claude | Ensure ~/.claude and its hooks folder exist"
   ansible.builtin.file:
-    path: "{{ claude_settings_path | dirname }}"
+    path: "{{ claude_settings_path | dirname }}{{ item }}"
     state: directory
     mode: '0755'
+  loop: ["", "/hooks"]
 
 - name: "Claude | Check for an existing settings.json"
   ansible.builtin.stat:
@@ -35,3 +36,10 @@
   vars:
     claude_settings_merged: "{{ claude_settings_current | combine(claude_settings, recursive=true) }}"
   when: claude_settings_merged != claude_settings_current
+
+# The hook behind the one approval a session asks for (defaults: hooks).
+- name: "Claude | Install the one-approval hook"
+  ansible.builtin.copy:
+    src: elevate.sh
+    dest: "{{ claude_settings_path | dirname }}/hooks/elevate.sh"
+    mode: '0755'
