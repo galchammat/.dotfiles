@@ -19,11 +19,11 @@
 .claude/*
 !.claude/hooks/
 
-# OpenCode: track only the shared config. service.json is machine-local service
-# registration, cli.json/dcp.jsonc are local prefs, and node_modules plus the
-# package files are plugin runtime state.
+# OpenCode: track the shared server and CLI settings. Keep machine-local
+# service registration, DCP preferences, and plugin runtime files ignored.
 .config/opencode/*
 !.config/opencode/opencode.json
+!.config/opencode/cli.json
 
 # OpenCode runtime state: credentials (auth.json), session database, logs, and
 # shell tool output live under the data directory.
