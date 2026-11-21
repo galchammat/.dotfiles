@@ -1,5 +1,11 @@
 {
   "$schema": "https://opencode.ai/v2/cli.json",
+  "theme": {
+    "name": "flexoki"
+  },
+  "tabs": {
+    "mode": "off"
+  },
   "session": {
     "sidebar": "hide"
   }
