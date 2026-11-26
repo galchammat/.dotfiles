@@ -46,7 +46,7 @@ done
 getent hosts opentunnel.xyz claude.ai >/dev/null 2>&1 || log "warning: network still down after wait, starting anyway"
 
 # 1. opencode background service (holds the remote tunnel)
-if SSH_AUTH_SOCK=/dev/null zsh -c 'command -v opencode >/dev/null || exit 127; exec opencode service start' >>"$state/opencode-service.log" 2>&1; then
+if SSH_AUTH_SOCK="${SSH_AUTH_SOCK:-/dev/null}" zsh -c 'command -v opencode >/dev/null || exit 127; exec opencode service start' >>"$state/opencode-service.log" 2>&1; then
   log "opencode service: ready"
 elif [ "$?" -eq 127 ]; then
   log "opencode service: SKIPPED — zsh or opencode not found in PATH"
