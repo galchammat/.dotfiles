@@ -1,0 +1,88 @@
+---
+- name: "OpenCode | Ensure the shell uses a V2 CLI"
+  vars:
+    # A standalone playbook run may not have checked out the zsh dotfiles to HOME.
+    opencode_nvm_fallback: |
+      if [[ ! -r "${ZDOTDIR:-$HOME}/.zshenv" && -r "$HOME/.nvm/nvm.sh" ]]; then
+        export NVM_DIR="$HOME/.nvm"
+        source "$NVM_DIR/nvm.sh"
+      fi
+  environment:
+    SSH_AUTH_SOCK: /dev/null
+  block:
+    - name: "OpenCode | Check the version on the dotfiles PATH"
+      ansible.builtin.shell: |
+        {{ opencode_nvm_fallback }}
+        opencode --version
+      args:
+        executable: /bin/zsh
+      register: opencode_version
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: "OpenCode | Install V2 in the current npm prefix"
+      ansible.builtin.shell: |
+        set -e
+        {{ opencode_nvm_fallback }}
+        if ! command -v npm >/dev/null; then
+          print -u2 'npm was not found. Run the full dotfiles setup to install Node.js, then retry.'
+          exit 1
+        fi
+        {{ lookup('ansible.builtin.file', role_path ~ '/files/install-opencode.zsh') }}
+      args:
+        executable: /bin/zsh
+      when: opencode_version.rc != 0 or opencode_version.stdout is not match('^(opencode )?v?2\.')
+
+- name: "OpenCode | Enable background updates on systemd"
+  when: ansible_facts['service_mgr'] == 'systemd'
+  vars:
+    opencode_units_dir: "{{ ansible_facts['user_dir'] }}/.config/systemd/user"
+  environment:
+    XDG_RUNTIME_DIR: "{{ lookup('env', 'XDG_RUNTIME_DIR') | default('/run/user/' ~ ansible_facts['user_uid'], true) }}"
+  block:
+    - name: "OpenCode | Check for the user timers directory"
+      ansible.builtin.stat:
+        path: "{{ opencode_units_dir }}/timers.target.wants"
+      register: opencode_user_timers_dir
+
+    - name: "OpenCode | Create the user timers directory"
+      ansible.builtin.file:
+        path: "{{ opencode_units_dir }}/timers.target.wants"
+        state: directory
+        mode: '0755'
+      when: not opencode_user_timers_dir.stat.exists
+
+    - name: "OpenCode | Install the user update units"
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ opencode_units_dir }}/{{ item }}"
+        mode: '0644'
+      loop:
+        - opencode-update.service
+        - opencode-update.timer
+
+    # Enable even when there is no user manager yet (e.g. over SSH or in CI).
+    - name: "OpenCode | Enable the user update timer"
+      ansible.builtin.file:
+        src: "{{ opencode_units_dir }}/opencode-update.timer"
+        dest: "{{ opencode_units_dir }}/timers.target.wants/opencode-update.timer"
+        state: link
+      when: not ansible_check_mode
+
+    - name: "OpenCode | Check for a running user manager"
+      ansible.builtin.command: systemctl --user show -p Version --value
+      register: opencode_user_manager
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: "OpenCode | Start the user update timer"
+      ansible.builtin.systemd_service:
+        name: opencode-update.timer
+        scope: user
+        daemon_reload: true
+        state: started
+      when:
+        - opencode_user_manager.rc == 0
+        - not ansible_check_mode

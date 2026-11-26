@@ -1,0 +1,11 @@
+[Unit]
+Description=Update the OpenCode CLI
+
+[Service]
+Type=oneshot
+# Load the usual PATH from .zshenv without starting its SSH agent at boot.
+Environment=SSH_AUTH_SOCK=/dev/null
+ExecStart=/usr/bin/zsh -c 'command -v opencode >/dev/null || exit 0; exec opencode update'
+TimeoutStartSec=5min
+Restart=on-failure
+RestartSec=1min
