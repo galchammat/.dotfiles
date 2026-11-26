@@ -1,9 +1,9 @@
 [Unit]
-Description=Check for OpenCode updates at boot and each morning
+Description=Check for OpenCode updates at boot and hourly
 
 [Timer]
 OnBootSec=5s
-OnCalendar=06:00
+OnCalendar=hourly
 AccuracySec=1s
 Persistent=true
 
