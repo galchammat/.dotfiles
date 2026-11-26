@@ -2,26 +2,33 @@ npm_prefix=$(npm prefix --global)
 npm_root=$(npm root --global)
 install_v2=(npm install --global --include=optional --allow-scripts=@opencode/cli)
 
-legacy_paths=()
+# Serialize migrations that use the same npm prefix.
+mkdir -p -- "$npm_prefix"
+zmodload zsh/system
+touch -- "$npm_prefix/.opencode-install.lock"
+zsystem flock -t 60 "$npm_prefix/.opencode-install.lock"
+
+legacy_packages=()
 for package in opencode-ai @opencode-ai/cli; do
   if [[ -f "$npm_root/$package/package.json" ]]; then
-    legacy_paths+=("$npm_root/$package")
+    legacy_packages+=("$npm_root/$package")
   fi
 done
 
-if (( ! ${#legacy_paths[@]} )); then
-  "${install_v2[@]}" @opencode/cli@2
-  opencode --version | grep -E '^(opencode )?v?2\.'
-  exit
-fi
-
 # The old stable and preview packages can own opencode and opencode2 respectively.
+legacy_links=()
 for name in opencode opencode2; do
   link="$npm_prefix/bin/$name"
   if [[ -e "$link" || -L "$link" ]]; then
-    case "${link:A}" in
+    target="$link"
+    if [[ -L "$link" ]]; then
+      # Resolve the original target even if an interrupted install left it dangling.
+      target=$(readlink "$link")
+      [[ "$target" == /* ]] || target="${link:h}/$target"
+    fi
+    case "${target:A}" in
       "${npm_root:A}"/opencode-ai/* | "${npm_root:A}"/@opencode-ai/cli/* | "${npm_root:A}"/@opencode/cli/*)
-        legacy_paths+=("$link")
+        legacy_links+=("$link")
         ;;
       *)
         print -u2 "Leaving $link in place: it is not owned by an OpenCode npm package."
@@ -30,6 +37,12 @@ for name in opencode opencode2; do
     esac
   fi
 done
+
+if (( ! ${#legacy_packages[@]} && ! ${#legacy_links[@]} )); then
+  "${install_v2[@]}" @opencode/cli@2
+  opencode --version | grep -E '^(opencode )?v?2\.'
+  exit
+fi
 
 # Cache and verify the replacement before changing the current installation.
 stage=$(mktemp -d "$npm_prefix/.opencode-v2.XXXXXX")
@@ -44,7 +57,7 @@ mkdir -- "$stage/backup"
 finish_migration() {
   local result=$? legacy_path saved
   if (( result != 0 )); then
-    for legacy_path in "${legacy_paths[@]}"; do
+    for legacy_path in "${legacy_packages[@]}" "${legacy_links[@]}"; do
       saved="$stage/backup/${legacy_path:t}"
       if [[ -e "$saved" || -L "$saved" ]]; then
         if ! mv -f -- "$saved" "$legacy_path"; then
@@ -59,9 +72,9 @@ finish_migration() {
 }
 trap finish_migration EXIT
 
-# Move the old packages and shims aside together. npm uninstall would delete the
-# shared shims, so only discard these backups once the replacement runs from PATH.
-for legacy_path in "${legacy_paths[@]}"; do
+# Move shims first so even a hard stop cannot strand links to moved packages.
+# Keep both until the replacement runs from PATH.
+for legacy_path in "${legacy_links[@]}" "${legacy_packages[@]}"; do
   mv -- "$legacy_path" "$stage/backup/"
 done
 npm_config_offline=true "${install_v2[@]}" "@opencode/cli@${staged_version#v}"
