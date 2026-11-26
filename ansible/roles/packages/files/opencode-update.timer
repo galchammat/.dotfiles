@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for OpenCode updates at boot and each morning
+
+[Timer]
+OnBootSec=5s
+OnCalendar=06:00
+AccuracySec=1s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

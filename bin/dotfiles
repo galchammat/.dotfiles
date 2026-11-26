@@ -724,7 +724,7 @@ if [[ -n "${DEV_AGENT:-}" ]]; then
     copilot)  agent_pkg="@github/copilot";           agent_bin="copilot"  ;;
     claude)   agent_pkg="@anthropic-ai/claude-code"; agent_bin="claude"   ;;
     codex)    agent_pkg="@openai/codex";             agent_bin="codex"    ;;
-    opencode) agent_pkg="opencode-ai";               agent_bin="opencode" ;;
+    opencode) ;; # Installed by the packages role below.
     *)
       echo -e "${RED} [✗]  ${CAT_TEXT}Unknown agent '${DEV_AGENT}'. Choose: copilot, claude, codex, opencode${NC}"
       exit 1
@@ -751,12 +751,21 @@ if [[ -n "${DEV_AGENT:-}" ]]; then
   if [[ -t 0 ]]; then
     read -r -p "$(echo -e "${CAT_TEAL}Install/check ${DEV_AGENT} now? Choose 'n' to handle it yourself [y/N]: ${NC}")" reply
     [[ "$reply" =~ ^[Yy]$ ]] && do_install="yes"
+  elif [[ "$DEV_AGENT" == "opencode" ]]; then
+    echo -e "${CAT_SUBTEXT1}No terminal detected; skipping install. Run: dotfiles --tags opencode${NC}"
   else
     echo -e "${CAT_SUBTEXT1}No terminal detected; skipping install. Install it yourself with: npm install -g ${agent_pkg}${NC}"
   fi
 
   if [[ "$do_install" == "yes" ]]; then
-    if command -v "$agent_bin" >/dev/null 2>&1; then
+    if [[ "$DEV_AGENT" == "opencode" ]]; then
+      if ! command -v zsh >/dev/null 2>&1; then
+        echo -e "${RED} [✗]  ${CAT_TEXT}zsh not found. Run the full dotfiles setup, then retry.${NC}"
+        exit 1
+      fi
+      ANSIBLE_CONFIG="$HOME/ansible/ansible.cfg" ansible-playbook "$HOME/ansible/playbook.yml" \
+        -i "$HOME/ansible/hosts" --tags opencode || exit $?
+    elif command -v "$agent_bin" >/dev/null 2>&1; then
       echo -e "${GREEN} [✓]  ${CAT_TEXT}${agent_bin} is already installed: $(command -v "$agent_bin")${NC}"
     elif command -v npm >/dev/null 2>&1; then
       echo -e "${CAT_SUBTEXT1}Installing ${agent_pkg} via npm...${NC}"

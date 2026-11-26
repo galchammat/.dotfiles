@@ -61,6 +61,20 @@
         that: (bashrc.content | b64decode) is search('ANSIBLE MANAGED BLOCK - NVM')
         fail_msg: "The nvm block was not written into ~/.bashrc."
 
+    - name: Read the installed OpenCode CLI version
+      ansible.builtin.shell: |
+        source "$HOME/.nvm/nvm.sh"
+        opencode --version
+      args:
+        executable: /bin/bash
+      register: opencode_ver
+      changed_when: false
+
+    - name: Assert OpenCode V2 was installed
+      ansible.builtin.assert:
+        that: opencode_ver.stdout is match('^opencode v2\.')
+        fail_msg: "Expected OpenCode V2, got '{{ opencode_ver.stdout }}'."
+
     # --- oh-my-zsh installed without clobbering the shell config ------------
     - name: Stat the oh-my-zsh directory
       ansible.builtin.stat:

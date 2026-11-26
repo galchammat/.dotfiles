@@ -1,15 +1,16 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "provider": {
+  "providers": {
     "enmaas": {
-      "npm": "@ai-sdk/openai-compatible",
       "name": "EnMaaS",
-      "options": {
+      "package": "@opencode/ai/providers/openai-compatible",
+      "env": ["ENMAAS_API_KEY"],
+      "settings": {
         "baseURL": "{env:ENMAAS_BASE_URL}/v1",
-        "apiKey": "{env:ENMAAS_API_KEY}",
-        "headers": {
-          "Authorization": "Bearer {env:ENMAAS_API_KEY}"
-        }
+        "apiKey": "{env:ENMAAS_API_KEY}"
+      },
+      "headers": {
+        "Authorization": "Bearer {env:ENMAAS_API_KEY}"
       },
       "models": {
         "rits/zai-org/glm-5-3": {
@@ -22,6 +23,9 @@
     }
   },
   "model": "enmaas/rits/zai-org/glm-5-3",
+  "permissions": [
+    { "action": "external_directory", "resource": "*", "effect": "ask" }
+  ],
   "mcp": {
     "servers": {
       "atlassian": {
